@@ -379,7 +379,7 @@ def buscar_conhecimento(pergunta):
 
     if (
             "atacante recua" in texto and "criação" in texto
-        ) or ("atacante recua" in texto and "criacao in texto"):
+        ) or ("atacante recua" in texto and "criacao" in texto):
     
         return "falso_9"
 
@@ -412,8 +412,38 @@ def buscar_conhecimento(pergunta):
 def identificar_intencao_tatica(pergunta):
     texto = pergunta.lower()
 
-    if "atacante" in texto and "recuar" in texto:
+    if "falso 9" in texto and "falso 9" in texto:
         return "falso_9"
+
+    if "pressão alta" in texto or "pressao alta" in texto:
+        return "pressao_alta"
+
+    if "bloco baixo" in texto or "bloco_baixo" in texto:
+        return "bloco_baixo"
+
+    if "contra ataque" in texto or "contra-ataque" in texto:
+        return "contra_ataque"
+
+    if "linha alta" in texto or "linha_alta" in texto:
+        return "linha_alta"
+
+    if "transição" in texto or "transicao" in texto:
+        return "transicao"
+
+    if "posse de bola" in texto:
+        return "posse_de_bola"
+
+    if "amplitude" in texto:
+        return "amplitude"
+
+    if "compactação" in texto or "compactacao" in texto:
+        return "compactacao"
+
+    if "marcação individual" in texto or "marcacao individual" in texto:
+        return "marcacao_individual"
+
+    if "marcação por zona" in texto or "marcacao por zona" in texto:
+        return "marcacao_por_zona"
 
     # Pressão alta
     if (
@@ -494,6 +524,9 @@ def identificar_intencao_tatica(pergunta):
         or "atacante recua para criar jogadas" in texto
         or "centroavante recua para criar" in texto
         or "atacante sai da área para criar" in texto
+        or "centroavante recua para participar da criação" in texto
+        or "centroavante recua para criar jogadas" in texto
+        or "centroavante sai da área para criar" in texto
     ):
         return "falso_9"
 
@@ -533,8 +566,28 @@ def identificar_intencao_tatica(pergunta):
         or "cada jogador e responsavel por proteger uma determinada regiao" in texto
         or "proteger uma determinada região do campo" in texto
         or "proteger uma determinada regiao do campo" in texto
+        or "cada jogador protege uma região do campo" in texto
+        or "cada jogador protege uma regiao do campo" in texto
     ):
         return "marcacao_por_zona"
+
+    if "4-3-3" in texto or "4 3 3" in texto or "433" in texto:
+        return "4-3-3"
+
+    if "4-4-2" in texto or "4 4 2" in texto or "442" in texto:
+        return "4-4-2"
+
+    if "4-2-3-1" in texto or "4 2 3 1" in texto or "4231" in texto:
+        return "4-2-3-1"
+
+    if "3-5-2" in texto or "3 5 2" in texto or "352" in texto:
+        return "3-5-2"
+
+    if "3-4-3" in texto or "3 4 3" in texto or "343" in texto:
+        return "3-4-3"
+
+    if "4-3-1-2" in texto or "4 3 1 2" in texto or "4312" in texto:
+        return "4-3-1-2"
 
     return None
 
@@ -607,9 +660,6 @@ def buscar_conhecimento_tatico(pergunta):
 
     if "marcação por zona" in texto or "marcacao por zona" in texto:
         return CONHECIMENTO_TATICO["marcacao_por_zona"]
-
-    if "transição" in texto or "transicao" in texto:
-        return CONHECIMENTO_TATICO["transicao"]
     
     return None
 
@@ -908,6 +958,16 @@ def formatar_data_jogo(data_utc):
 
     return data_brasil.strftime("%d/%m às %Hh%M")
 
+def gerar_resposta_tatica(dados):
+    info = dados["dados"]
+
+    resposta = f"{info['nome']}: {info['descricao']}"
+
+    if "caracteristicas" in info:
+        resposta += f"\n\nCaracterísticas: {info['caracteristicas']}"
+
+    return resposta
+
 @app.post("/api/chat")
 def conversar(pergunta: Pergunta):
     intencao_tatica = identificar_intencao_tatica(pergunta.pergunta)
@@ -918,10 +978,7 @@ def conversar(pergunta: Pergunta):
             "dados": CONHECIMENTO_TATICO[intencao_tatica]
         }
 
-        resposta = gerar_resposta_ollama(
-            pergunta.pergunta,
-            conhecimento_tatico
-        )
+        resposta = gerar_resposta_tatica(conhecimento_tatico)
 
         return {
             "response": resposta
@@ -990,7 +1047,7 @@ def conversar(pergunta: Pergunta):
 
         if isinstance(jogo, dict) and "erro" in jogo:
             return {
-                "response": f"Não consegui encontrar o último jogo: {jogo["erro"]}"
+                "response": f"Não consegui encontrar o último jogo: {jogo['erro']}"
             }
 
         if normalizar_nome_time(time) in normalizar_nome_time(jogo["mandante"]):
