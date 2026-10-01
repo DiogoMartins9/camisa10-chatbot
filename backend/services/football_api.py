@@ -54,61 +54,6 @@ def nome_time_portugues(nome):
 
     return traducoes.get(nome, nome)
 
-def buscar_classificacao(league_id, season):
-    url = f"{BASE_URL}/standings"
-
-    params = {
-        "league": league_id,
-        "season": season
-    }
-    headers = {
-        "x-apisports-key": API_KEY
-    }
-
-    resposta = requests.get(url, headers=headers, params=params)
-
-    dados = resposta.json()
-
-    if dados["errors"]:
-        return {
-            "erro": dados["errors"]
-        }
-
-    classificacao = dados["response"][0]["league"]["standings"][0]
-
-    resultado = []
-
-    for time in classificacao:
-        resultado.append({
-            "posicao": time["rank"],
-            "time": time["team"]["name"],
-            "pontos": time["points"],
-            "jogos": time["all"]["played"],
-            "vitorias": time["all"]["win"],
-            "empates": time["all"]["draw"],
-            "derrotas": time["all"]["lose"],
-        })
-
-    return resultado
-
-def buscar_time_classificacao(league_id, season, nome_time):
-    classificacao = buscar_classificacao(league_id, season)
-
-    if isinstance(classificacao, dict) and "erro" in classificacao:
-        return classificacao
-
-    nome_busca = nome_time.lower().replace("-", " ")
-
-    for time in classificacao:
-        nome_classificacao = time["time"].lower().replace("-", " ")
-
-        if nome_classificacao == nome_busca:
-            return time
-
-    return {
-        "erro": f"Time '{nome_time}' não encontrado na classificação da liga {league_id} na temporada {season}."
-    }
-
 def buscar_time(nome_time):
     url = f"{BASE_URL}/teams"
 
@@ -198,7 +143,8 @@ def buscar_jogos_time(team_id, status):
     url = f"https://api.football-data.org/v4/teams/{team_id}/matches"
 
     headers = {
-        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN,
+        "X-Unfold-Goals": "true"
     }
 
     params = {
@@ -309,6 +255,43 @@ def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
             "gols_visitante": gols_visitante,
             "penaltis_mandante": penaltis_mandante,
             "penaltis_visitante": penaltis_visitante
+        })
+
+    return resultado
+
+def buscar_classificacao_competicao(codigo_competicao):
+    url = f"https://api.football-data.org/v4/competitions/{codigo_competicao}/standings"
+
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+    }
+
+    resposta = requests.get(
+        url,
+        headers=headers
+    )
+
+    dados = resposta.json()
+
+    if resposta.status_code != 200:
+        return {"erro": dados}
+
+    try:
+        classificacao = dados["standings"][0]["table"]
+    except (KeyError, IndexError):
+        return {"erro": "Classificação não encontrada."}
+
+    resultado = []
+
+    for time in classificacao:
+        resultado.append({
+            "posicao": time["position"],
+            "time": time["team"]["name"],
+            "pontos": time["points"],
+            "jogos": time["playedGames"],
+            "vitorias": time["won"],
+            "empates": time["draw"],
+            "derrotas": time["lost"]
         })
 
     return resultado

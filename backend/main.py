@@ -3,7 +3,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_time_classificacao, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues)
+from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime
@@ -285,13 +285,6 @@ def identificar_dado_classificacao(pergunta):
         return "derrotas"
 
     return None
-
-@app.get("/api/classificacao/{nome_time}")
-def classificacao_time(nome_time: str):
-
-    dados = buscar_time_classificacao(71, 2024, nome_time)
-
-    return dados
 
 def buscar_conhecimento(pergunta):
 
@@ -745,6 +738,17 @@ def pergunta_e_de_futebol(pergunta):
     if identificar_tipo_jogo(pergunta) is not None:
         return True
 
+    if identificar_dado_classificacao(pergunta) is not None:
+        return True
+
+    if any(frase in texto for frase in [
+        "campanha",
+        "como está a campanha",
+        "como esta a campanha",
+        "campanha do time"
+    ]):
+        return True
+
     palavras_futebol = [
         "impedimento",
         "escanteio",
@@ -794,6 +798,11 @@ def pergunta_e_de_futebol(pergunta):
         "champions",
         "libertadores",
         "copa do mundo",
+        "campeonato",
+        "classificação",
+        "classificacao",
+        "posição",
+        "posicao",
         "cartao",
         "cartão",
         "pênalti",
@@ -874,8 +883,12 @@ def identificar_tipo_jogo(pergunta):
         or "proximo jogo" in texto
         or "quando joga" in texto
         or "quando vai jogar" in texto
+        or "vai jogar" in texto
         or "próxima partida" in texto
         or "proxima partida" in texto
+        or "próximo adversário" in texto
+        or "proximo adversario" in texto
+        or "quando o " in texto and " joga" in texto
     ):
         return "proximo"
 
@@ -896,6 +909,8 @@ def identificar_tipo_jogo(pergunta):
         or "quanto foi o jogo" in texto
         or "quanto foi o último" in texto
         or "quanto foi o ultimo" in texto
+        or "jogou pela última vez" in texto
+        or "jogou pela ultima vez" in texto
     ):
         return "ultimo"
 
@@ -1233,7 +1248,28 @@ def conversar(pergunta: Pergunta):
 
     if time is not None:
 
-        dados = buscar_time_classificacao(71, 2024, time)
+        classificacao = buscar_classificacao_competicao("BSA")
+
+        if isinstance(classificacao, dict) and "erro" in classificacao:
+            return {
+                "response": "Não consegui consultar a classificação do campeonato no momento."
+            }
+
+        nome_busca = normalizar_nome_time(time)
+
+        dados = None
+
+        for item in classificacao:
+            nome_classificacao = normalizar_nome_time(item["time"])
+
+            if nome_busca in nome_classificacao or nome_classificacao in nome_busca:
+                dados = item
+                break
+
+        if dados is None:
+            return {
+                "response": f"Não encontrei o {nome_exibicao_time(time)} na classificação atual."
+            }
 
     texto = pergunta.pergunta.lower()
 
@@ -1245,9 +1281,9 @@ def conversar(pergunta: Pergunta):
     or "me fale sobre a campanha" in texto):
         return {
             "response": (
-                f"O {dados['time']} terminou o Brasileirão em "
-                f"{dados['posicao']}º lugar, com {dados['pontos']} pontos "
-                f"em {dados['jogos']} jogos. Foram {dados['vitorias']} vitórias, "
+                f"O {dados['time']} está atualmente na "
+                f"{dados['posicao']}ª posição do Brasileirão, com {dados['pontos']} pontos "
+                f"em {dados['jogos']} jogos. Até o momento, foram {dados['vitorias']} vitórias, "
                 f"{dados['empates']} empates e {dados['derrotas']} derrotas."
             )
         }
