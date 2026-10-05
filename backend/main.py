@@ -272,17 +272,17 @@ def identificar_dado_classificacao(pergunta):
     if "ponto" in texto or "pontos" in texto:
         return "pontos"
 
-    if "jogo" in texto or "partida" in texto:
-        return "jogos"
-
-    if "vitoria" in texto or "vitória" in texto:
+    if "vitoria" in texto or "vitória" in texto or "venceu" in texto:
         return "vitorias"
 
-    if "empate" in texto:
+    if "empate" in texto or "empatou" in texto:
         return "empates"
-
-    if "derrota" in texto:
+    
+    if "derrota" in texto or "perdeu" in texto:
         return "derrotas"
+
+    if "jogo" in texto or "partida" in texto:
+        return "jogos"
 
     return None
 
@@ -1020,6 +1020,8 @@ def conversar(pergunta: Pergunta):
 
     tipo_jogo = identificar_tipo_jogo(pergunta.pergunta)
 
+    texto = pergunta.pergunta.lower()
+
     if tipo_jogo == "proximo":
 
         time = identificar_time(pergunta.pergunta)
@@ -1037,6 +1039,26 @@ def conversar(pergunta: Pergunta):
             adversario = nome_exibicao_api(jogo["mandante"]) 
 
         data_jogo = formatar_data_jogo(jogo["data"])
+
+        if "quando" in texto or "data" in texto:
+            return {
+                "response": f"O próximo jogo do {nome_time} será no dia {data_jogo}, contra o {adversario}."
+            }
+
+        if "competição" in texto or "competicao" in texto:
+            return {
+                "response": f"O próximo jogo do {nome_time} será pelo {jogo['competicao']}."
+            }
+
+        if "casa" in texto or "fora" in texto:
+            if normalizar_nome_time(time) in normalizar_nome_time(jogo["mandante"]):
+                local = "em casa"
+            else:
+                local = "fora de casa"
+
+            return {
+                "response": f"O {nome_time} jogará {local} no próximo jogo, contra o {adversario}."
+            }
 
         resposta = (
             "O próximo jogo do "
@@ -1075,6 +1097,32 @@ def conversar(pergunta: Pergunta):
             adversario = nome_exibicao_api(jogo["mandante"]) 
             gols_time = jogo["gols_visitante"]
             gols_adversario = jogo["gols_mandante"]
+
+        if "casa" in texto or "fora" in texto:
+            if normalizar_nome_time(time) in normalizar_nome_time(jogo["mandante"]):
+                local = "em casa"
+            else:
+                local = "fora de casa"
+
+            return {
+                "response": f"O {nome_time} jogou {local} no último jogo, contra o {adversario}."
+            }
+
+        if "placar" in texto or "resultado" in texto:
+            return {
+                "response": f"O placar do último jogo do {nome_time} foi {gols_time} a {gols_adversario} contra o {adversario}."
+            }
+
+        if "competição" in texto or "competicao" in texto:
+            return {
+                "response": f"O último jogo do {nome_time} foi pelo {jogo['competicao']}."
+            }
+
+        if "quando" in texto or "data" in texto:
+            data_jogo = formatar_data_jogo(jogo["data"])
+            return {
+                "response": f"O último jogo do {nome_time} foi no dia {data_jogo}, contra o {adversario}."
+            }
 
         resposta = (
             "O último jogo do "
@@ -1294,7 +1342,7 @@ def conversar(pergunta: Pergunta):
 
         respostas = {
             "pontos": f"O {dados['time']} fez {dados['pontos']} pontos no Brasileirão.",
-            "posicao": f"O {dados['time']} terminou na {dados['posicao']}ª posição do Brasileirão.",
+            "posicao": f"O {dados['time']} está atualmente na {dados['posicao']}ª posição do Brasileirão.",
             "jogos": f"O {dados['time']} jogou {dados['jogos']} partidas no Brasileirão.",
             "vitorias": f"O {dados['time']} venceu {dados['vitorias']} jogos no Brasileirão.",
             "empates": f"O {dados['time']} empatou {dados['empates']} jogos no Brasileirão.",
