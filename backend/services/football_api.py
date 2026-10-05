@@ -168,8 +168,6 @@ def buscar_jogos_time(team_id, status):
 
     for partida in dados.get("matches", []):
 
-        print(partida)
-
         score = partida["score"]
 
         if "regularTime" in score:
