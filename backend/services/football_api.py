@@ -1,7 +1,9 @@
 import os
 import requests
 import unicodedata
+import time
 from dotenv import load_dotenv
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -10,7 +12,11 @@ FOOTBALL_DATA_TOKEN = os.getenv("FOOTBALL_DATA_TOKEN")
 
 BASE_URL = "https://v3.football.api-sports.io"
 
+
 def normalizar_nome_time(nome):
+    if not nome:
+        return ""
+
     nome = (
         unicodedata
         .normalize("NFD", nome)
@@ -21,17 +27,48 @@ def normalizar_nome_time(nome):
     )
 
     nome = nome.replace("-", " ")
+    nome = " ".join(nome.split())
 
-    # Padroniza diferentes nomes do Atlético-MG
-    if nome in [
-        "atletico mg",
-        "atletico mineiro",
-        "clube atletico mineiro",
-        "ca mineiro"
-    ]:
-        return "atletico mg"
+    aliases = {
+    # São Paulo
+    "sao paulo fc": "sao paulo",
+    "sao paulo": "sao paulo",
+    "spfc": "sao paulo",
 
-    return nome
+    # Palmeiras
+    "se palmeiras": "palmeiras",
+    "palmeiras": "palmeiras",
+
+    # Flamengo
+    "cr flamengo": "flamengo",
+    "flamengo": "flamengo",
+    "clube de regatas do flamengo": "flamengo",
+
+    # Fluminense
+    "fluminense fc": "fluminense",
+    "fluminense": "fluminense",
+
+    # Corinthians
+    "sc corinthians paulista": "corinthians",
+    "corinthians": "corinthians",
+
+    # Santos
+    "santos fc": "santos",
+    "santos": "santos",
+
+    # Outros aliases já utilizados
+    "real madrid cf": "real madrid",
+    "fc real madrid": "real madrid",
+    "fc barcelona": "barcelona",
+    "barcelona fc": "barcelona",
+    "atletico madrid": "atletico de madrid",
+    "club atletico de madrid": "atletico de madrid",
+    "atletico mineiro": "atletico mg",
+    "clube atletico mineiro": "atletico mg",
+    "ca mineiro": "atletico mg",
+}
+
+    return aliases.get(nome, nome)
 
 def nome_time_portugues(nome):
     traducoes = {
@@ -201,24 +238,42 @@ def buscar_jogos_time(team_id, status):
 
     return resultado
 
+_CACHE_JOGOS = {}
+_TEMPO_CACHE = 60 * 5  # 5 minutos
+
 def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
+    chave_cache = (codigo_competicao, status)
+    agora_cache = time.time()
+
+    if chave_cache in _CACHE_JOGOS:
+        horario, resultado_cache = _CACHE_JOGOS[chave_cache]
+        
+        if agora_cache - horario < _TEMPO_CACHE:
+            return resultado_cache
+
     url = f"https://api.football-data.org/v4/competitions/{codigo_competicao}/matches"
 
     headers = {
         "X-Auth-Token": FOOTBALL_DATA_TOKEN
     }
 
-    params = {
-        "status": status
-    }
+    params = {}
+    if status:
+        params["status"] = status
 
-    resposta = requests.get(
-        url,
-        headers=headers,
-        params=params
-    )
-        
-    dados = resposta.json()
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=15
+        )
+        dados = resposta.json()
+
+    except requests.RequestException as erro:
+        return {"erro": str(erro)}
+    except ValueError:
+        return {"erro": "A API retornou uma resposta inválida."}
 
     if resposta.status_code != 200:
         return {"erro": dados}
@@ -227,21 +282,17 @@ def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
 
     for partida in dados.get("matches", []):
 
-        score = partida["score"]
+        score = partida.get("score") or {}
+        regular_time = score.get("regularTime") or {} 
+        full_time = score.get("fullTime") or {}
+        penalties = score.get("penalties") or {}
 
         if score.get("duration") == "PENALTY_SHOOTOUT":
-            gols_mandante = score["regularTime"]["home"]
-            gols_visitante = score["regularTime"]["away"]
+            gols_mandante = regular_time.get("home")
+            gols_visitante = regular_time.get("away")
         else:
-            gols_mandante = score["fullTime"]["home"]
-            gols_visitante = score["fullTime"]["away"]
-
-        penaltis_mandante = None
-        penaltis_visitante = None
-
-        if "penalties" in score:
-            penaltis_mandante = score["penalties"]["home"]
-            penaltis_visitante = score["penalties"]["away"]
+            gols_mandante = full_time.get("home")
+            gols_visitante = full_time.get("away")
 
         resultado.append({
             "id": partida["id"],
@@ -249,13 +300,16 @@ def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
             "status": partida["status"],
             "competicao": partida["competition"]["name"],
             "codigo_competicao": partida["competition"]["code"],
+            "temporada": partida.get("season", {}).get("startDate"),
             "mandante": partida["homeTeam"]["name"],
             "visitante": partida["awayTeam"]["name"],
             "gols_mandante": gols_mandante,
             "gols_visitante": gols_visitante,
-            "penaltis_mandante": penaltis_mandante,
-            "penaltis_visitante": penaltis_visitante
+            "penaltis_mandante": penalties.get("home"),
+            "penaltis_visitante": penalties.get("away")
         })
+
+    _CACHE_JOGOS[chave_cache] = (time.time(), resultado)
 
     return resultado
 
@@ -322,6 +376,62 @@ def buscar_proximo_jogo(team_id):
 
     return jogos[0]
 
+def buscar_historico_confrontos(id_partida, limite=10):
+    url = (
+        f"https://api.football-data.org/v4/"
+        f"matches/{id_partida}/head2head"
+    )
+
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+    }
+
+    params = {
+        "limit": limite
+    }
+
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=15
+        )
+        dados = resposta.json()
+
+    except requests.RequestException as erro:
+        return {"erro": str(erro)}
+
+    except ValueError:
+        return {"erro": "A API retornou uma resposta inválida."}
+
+    if resposta.status_code != 200:
+        return {"erro": dados}
+
+    resultado = []
+
+    for partida in dados.get("matches", []):
+        score = partida.get("score") or {}
+        full_time = score.get("fullTime") or {}
+        penalties = score.get("penalties") or {}
+
+        resultado.append({
+            "id": partida["id"],
+            "data": partida["utcDate"],
+            "status": partida["status"],
+            "competicao": partida["competition"]["name"],
+            "codigo_competicao": partida["competition"]["code"],
+            "temporada": partida.get("season", {}).get("startDate"),
+            "mandante": partida["homeTeam"]["name"],
+            "visitante": partida["awayTeam"]["name"],
+            "gols_mandante": full_time.get("home"),
+            "gols_visitante": full_time.get("away"),
+            "penaltis_mandante": penalties.get("home"),
+            "penaltis_visitante": penalties.get("away")
+        })
+
+    return resultado
+
 def buscar_jogo_contra_adversario(time1, time2):
     competicoes = [
         "BSA", # Brasileirão
@@ -341,12 +451,16 @@ def buscar_jogo_contra_adversario(time1, time2):
     time2_normalizado = normalizar_nome_time(time2)
 
     jogos_encontrados = []
+    ids_partidas = []
 
     for codigo_competicao in competicoes:
 
-        jogos = buscar_jogos_competicao(codigo_competicao)
+        jogos = buscar_jogos_competicao(codigo_competicao, status=None)
 
         if isinstance(jogos, dict) and "erro" in jogos:
+            print(
+                f"Erro ao buscar jogos da competição {codigo_competicao}: {jogos['erro']}"
+            )
             continue
 
         for jogo in jogos:
@@ -357,26 +471,86 @@ def buscar_jogo_contra_adversario(time1, time2):
 
             confronto_encontrado = (
                 (
-                    time1_normalizado in mandante_normalizado
-                    and time2_normalizado in visitante_normalizado
+                    time1_normalizado == mandante_normalizado
+                    and time2_normalizado == visitante_normalizado
                 )
                 or
                 (
-                    time2_normalizado in mandante_normalizado
-                    and time1_normalizado in visitante_normalizado
+                    time2_normalizado == mandante_normalizado
+                    and time1_normalizado == visitante_normalizado
                 )
             )
 
             if confronto_encontrado:
                 jogos_encontrados.append(jogo)
+                ids_partidas.append(jogo["id"])
 
-    if not jogos_encontrados:
-        return {
-            "erro": "Nenhum jogo encontrado contra esse adversário."
+    historico = []
+
+    if ids_partidas:
+
+        historico = buscar_historico_confrontos(
+            ids_partidas[0],
+            limite=10
+        )
+
+
+        if isinstance(historico, dict) and "erro" in historico:
+            print(
+                "Erro ao buscar histórico:",
+                historico["erro"]
+            )
+            historico = []
+    else:
+        print(
+            "Nenhum ID de confronto foi encontrado para:",
+            time1,
+            "e",
+            time2
+        )
+        historico = []
+
+    if not isinstance(historico, list):
+        historico = []
+
+    jogos_por_id = {
+        jogo["id"]: 
+        jogo for jogo in jogos_encontrados
         }
 
-    jogos_encontrados.sort(
-        key=lambda jogo: jogo["data"]
-    )
+    for jogo in historico:
+        jogos_por_id[jogo["id"]] = jogo
 
-    return jogos_encontrados[-1]
+    jogos_encontrados = list(jogos_por_id.values())
+
+    agora = datetime.now(timezone.utc)
+
+    jogos_finalizados = []
+    jogos_futuros = []
+
+    for jogo in jogos_encontrados:
+        data_jogo = datetime.fromisoformat(
+            jogo["data"].replace("Z", "+00:00")
+        )
+
+        if jogo["status"] == "FINISHED":
+            jogos_finalizados.append((data_jogo, jogo))
+
+        elif jogo["status"] in ("SCHEDULED", "TIMED"):
+            if data_jogo >= agora:
+                jogos_futuros.append((data_jogo, jogo))
+
+    jogos_finalizados.sort(key=lambda item: item[0], reverse=True)
+    
+    jogos_futuros.sort(key=lambda item: item[0])
+
+    return {
+        "ultimo_jogo": (jogos_finalizados[0][1] 
+                        if jogos_finalizados 
+                        else None),
+        "proximo_jogo": (jogos_futuros[0][1] 
+                         if jogos_futuros 
+                         else None)
+    }
+
+    

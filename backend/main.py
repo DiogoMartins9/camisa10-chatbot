@@ -3,10 +3,10 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao)
+from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import requests
 
@@ -109,6 +109,9 @@ def identificar_time(pergunta):
         "sport",
         "barcelona",
         "sevilla",
+        "real madrid",
+        "manchester city",
+        "manchester united",
     ]
 
     # 1. Tenta reconhecer apelidos conhecidos
@@ -151,10 +154,10 @@ def identificar_time(pergunta):
             time.get("shortName") or ""
         )
 
-        if texto.strip() == nome_api:
+        if nome_api and nome_api in texto:
             return time["name"]
 
-        if texto.strip() == nome_curto_api:
+        if nome_curto_api and nome_curto_api in texto:
             return time["name"]
 
     return None
@@ -175,7 +178,9 @@ IDS_TIMES = {
     "bahia": 1777,
     "fortaleza": 1768,
     "barcelona": 81,
-    "sevilla": 559
+    "sevilla": 559,
+    "manchester city": 65,
+    "manchester united": 66,
 }
 
 def obter_id_time(nome_time):
@@ -879,6 +884,15 @@ def identificar_tipo_jogo(pergunta):
     texto = pergunta.lower()
 
     if (
+                " x " in texto
+                or " contra " in texto
+                or " entre " in texto
+                or " vs " in texto
+                or " versus " in texto
+        ):
+            return "confronto"
+
+    if (
         "próximo jogo" in texto
         or "proximo jogo" in texto
         or "quando joga" in texto
@@ -886,20 +900,16 @@ def identificar_tipo_jogo(pergunta):
         or "vai jogar" in texto
         or "próxima partida" in texto
         or "proxima partida" in texto
+        or "vai enfrentar" in texto
+        or "enfrenta" in texto
         or "próximo adversário" in texto
         or "proximo adversario" in texto
+        or (("adversário" in texto or "adversario" in texto)
+            and "último" not in texto and "ultimo" not in texto)
         or "quando o " in texto and " joga" in texto
     ):
         return "proximo"
 
-    if (
-            " x " in texto
-            or " contra " in texto
-            or " entre " in texto
-            or " vs " in texto
-            or " versus " in texto
-    ):
-        return "confronto"
 
     if (
         "último jogo" in texto
@@ -1173,101 +1183,182 @@ def conversar(pergunta: Pergunta):
 
         time1, time2 = identificar_confronto(pergunta.pergunta)
 
-        jogo = buscar_jogo_contra_adversario(
-            time1,
-            time2
-        )
+        confronto = buscar_jogo_contra_adversario(time1, time2)
 
-        if isinstance(jogo, dict) and "erro" in jogo:
-            print("Erro da API:", jogo["erro"])
-
+        if confronto is None:
             return {
-                "response": "Não consegui consultar esse confronto com a fonte de dados disponível no momento."
+                "response": (
+                    f"Não encontrei informações sobre o confronto entre "
+                    f"{time1} e {time2} nas competições disponíveis."
+                )
             }
 
-        mandante = nome_time_portugues(jogo["mandante"])
-        visitante = nome_time_portugues(jogo["visitante"])
-
-        nome_time1 = mandante
-        nome_time2 = visitante
-
-        if (
-            jogo["penaltis_mandante"] is not None
-            and jogo["penaltis_visitante"] is not None
-        ):
-            gols_mandante = 0
-            gols_visitante = 0
-        else:
-            gols_mandante = jogo["gols_mandante"]
-            gols_visitante = jogo["gols_visitante"]
-
-        if jogo["gols_mandante"] > jogo["gols_visitante"]:
-
-            resposta = (
-                nome_time1
-                + " venceu o "
-                + nome_time2
-                + " por "
-                + str(jogo["gols_mandante"])
-                + " a "
-                + str(jogo["gols_visitante"])
-                + "."
-            )
-
-        elif jogo["gols_visitante"] > jogo["gols_mandante"]:
-
-            resposta = (
-                nome_time2
-                + " venceu o "
-                + nome_time1
-                + " por "
-                + str(jogo["gols_visitante"])
-                + " a "
-                + str(jogo["gols_mandante"])
-                + "."
-            )
-
-        else:
-
-            resposta = (
-                nome_time1
-                + " e "
-                + nome_time2
-                + " empataram em "
-                + str(jogo["gols_mandante"])
-                + " a "
-                + str(jogo["gols_visitante"])
-                + "."
-            )
-
-        if (
-            jogo["penaltis_mandante"] is not None
-            and jogo["penaltis_visitante"] is not None
-        ):
-
-            if jogo["penaltis_mandante"] > jogo["penaltis_visitante"]:
-                vencedor_penaltis = mandante
-                placar_penaltis = (
-                    str(jogo["penaltis_mandante"])
-                    + " a "
-                    + str(jogo["penaltis_visitante"])
+        if isinstance(confronto, dict) and "erro" in confronto:
+            print("Erro da API:", confronto["erro"])
+            return {
+                "response": (
+                    "Não consegui consultar esse confronto com a fonte "
+                    "de dados disponível no momento."
                 )
-            else: 
-                vencedor_penaltis = visitante
-                placar_penaltis = (
-                    str(jogo["penaltis_visitante"])
-                    + " a "
-                    + str(jogo["penaltis_mandante"])
-                )
+            }
 
-            resposta += (
-                " Nos pênaltis, "
-                + vencedor_penaltis
-                + " venceu por "
-                + placar_penaltis
-                + "."
+        ultimo_jogo = confronto["ultimo_jogo"]
+        proximo_jogo = confronto["proximo_jogo"]
+
+        pergunta_normalizada = normalizar_nome_time(pergunta.pergunta)
+
+        palavras_proximo = [
+            "quando sera",
+            "quando vai ser",
+            "quando será o proximo",
+            "proximo confronto",
+            "proximo jogo",
+            "proximo duelo",
+            "quando jogam",
+            "quando vao jogar"
+        ]
+
+        palavras_temporada = [
+            "nesta temporada",
+            "nessa temporada",
+            "na temporada atual",
+            "esta temporada",
+            "ja teve",
+            "ja jogaram",
+            "se enfrentaram nesta temporada",
+            "se enfrentaram nessa temporada"
+        ]
+
+        palavras_ultimo = [
+            "ultimo confronto",
+            "ultimo jogo",
+            "ultimo duelo",
+            "quanto foi",
+            "qual foi o resultado",
+            "qual foi o placar",
+            "quem ganhou",
+            "quem venceu",
+            "quem levou a melhor",
+            "quem saiu vitorioso",
+            "resultado do confronto",
+            "resultado do jogo"
+        ]
+
+        quer_proximo = any(
+            termo in pergunta_normalizada
+            for termo in palavras_proximo
+        )
+
+        quer_temporada = any(
+            termo in pergunta_normalizada
+            for termo in palavras_temporada
+        )
+
+        quer_ultimo = any(
+            termo in pergunta_normalizada
+            for termo in palavras_ultimo
+        )
+
+        if quer_proximo:
+            if proximo_jogo is None:
+                return {
+                    "response": (
+                        f"Não encontrei um próximo confronto agendado "
+                        f"entre {time1} e {time2} nas competições disponíveis."
+                    )
+                }
+
+            fuso_brasilia = timezone(timedelta(hours=-3))
+
+            data_jogo = datetime.fromisoformat(
+                proximo_jogo["data"].replace("Z", "+00:00")
             )
 
+            data_local = data_jogo.astimezone(fuso_brasilia)
+
+            data_formatada = data_local.strftime("%d/%m às %Hh%M")
+
+            mandante = nome_time_portugues(proximo_jogo["mandante"])
+            visitante = nome_time_portugues(proximo_jogo["visitante"])
+
+            return {
+                "response": (
+                    f"O próximo confronto entre {mandante} "
+                    f"e {visitante} está previsto para {data_formatada}."
+                )
+            }
+
+        if quer_temporada:
+            if ultimo_jogo is None:
+                return {
+                    "response": (
+                        f"Não encontrei um confronto finalizado entre "
+                        f"{time1} e {time2} nesta temporada nas competições consultadas."
+                    )
+                }
+
+            return {
+                "response": (
+                    f"Encontrei um confronto finalizado entre {time1} e {time2}, "
+                    f"mas ainda preciso confirmar se ele pertence à temporada atual."
+                )
+            }
+
+        if ultimo_jogo is None:
+            return {
+                "response": (
+                    f"Não encontrei um confronto finalizado entre "
+                    f"{time1} e {time2} nas competições disponíveis."
+                )
+            }
+
+        mandante = nome_time_portugues(ultimo_jogo["mandante"])
+        visitante = nome_time_portugues(ultimo_jogo["visitante"])
+
+        gols_mandante = ultimo_jogo["gols_mandante"]
+        gols_visitante = ultimo_jogo["gols_visitante"]
+
+        if gols_mandante is None or gols_visitante is None:
+            return {
+                "response": (
+                    "Encontrei a partida, mas não consegui obter o placar final do jogo. "
+                )
+            }
+
+        if gols_mandante > gols_visitante:
+            resposta = (
+                f"{mandante} venceu {visitante} por "
+                f"{gols_mandante} a {gols_visitante}."
+            )
+
+        elif gols_mandante < gols_visitante:
+            resposta = (
+                f"{visitante} venceu {mandante} por "
+                f"{gols_visitante} a {gols_mandante}."
+            )
+
+        else:
+            resposta = (
+                f"{mandante} e {visitante} empataram por "
+                f"{gols_mandante} a {gols_visitante}."
+            )
+
+        if (ultimo_jogo["penaltis_mandante"] is not None and ultimo_jogo["penaltis_visitante"] is not None):
+            pen_mandante = ultimo_jogo["penaltis_mandante"]
+            pen_visitante = ultimo_jogo["penaltis_visitante"]
+
+            if pen_mandante > pen_visitante:
+                resposta += (
+                    f" Nos pênaltis, {mandante} venceu por "
+                    f"{pen_mandante} a {pen_visitante}."
+                )
+
+            elif pen_mandante < pen_visitante:
+                resposta += (
+                    f" Nos pênaltis, {visitante} venceu por "
+                    f"{pen_visitante} a {pen_mandante}."
+                )
+        
         return {
             "response": resposta
         }
