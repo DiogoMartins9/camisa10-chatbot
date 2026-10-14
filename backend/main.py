@@ -3,7 +3,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
+from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta
@@ -880,6 +880,119 @@ def pergunta_e_de_futebol(pergunta):
     resultado = resposta["message"]["content"].strip().upper()
     return resultado.startswith("SIM")
 
+def buscar_dados_classificacao_time(nome_time, codigo_competicao):
+    classificacao = buscar_classificacao_competicao(codigo_competicao)
+
+    if isinstance(classificacao, dict) and "erro" in classificacao:
+        return classificacao
+
+    nome_busca = normalizar_nome_time(nome_time)
+
+    for time in classificacao:
+        if normalizar_nome_time(time["time"]) == nome_busca:
+            return time
+
+    return {
+        "erro": f"Não encontrei {nome_time} na classificação."
+    }
+
+def identificar_competicao(pergunta, nome_time):
+    texto = normalizar_nome_time(pergunta)
+    time = normalizar_nome_time(nome_time)
+
+    if any(nome in texto for nome in [
+        "premier league",
+        "campeonato inglês",
+        "campeonato ingles"
+    ]):
+        return "PL"
+
+    if any(nome in texto for nome in [
+        "la liga",
+        "campeonato espanhol"
+    ]):
+        return "PD"
+
+    if any(nome in texto for nome in [
+        "serie a",
+        "campeonato italiano"
+    ]):
+        return "SA"
+
+    if any(nome in texto for nome in [
+        "bundesliga",
+        "campeonato alemão",
+        "campeonato alemao"
+    ]):
+        return "BL1"
+
+    if any(nome in texto for nome in [
+        "ligue 1",
+        "campeonato francês",
+        "campeonato frances"
+    ]):
+        return "FL1"
+
+    if any(nome in texto for nome in [
+        "campeonato brasileiro",
+        "campeonato brasileiro série a",
+        "campeonato brasileiro serie a",
+        "brasileirão",
+        "brasileirao"
+    ]):
+        return "BSA"
+
+    if any(nome in texto for nome in [
+        "libertadores",
+        "copa libertadores"
+    ]):
+        return "CL"
+
+    if any(nome in texto for nome in [
+        "champions",
+        "liga dos campeões",
+        "liga dos campeoes"
+    ]):
+        return "CL"
+
+    if time in [
+        "barcelona",
+        "sevilla",
+        "real madrid"
+    ]:
+        return "PD"
+
+    if time in [
+        "manchester city",
+        "manchester united",
+        "liverpool",
+        "chelsea",
+        "arsenal"
+    ]:
+        return "PL"
+
+def nome_exibicao_competicao(codigo):
+    nomes = {
+        "BSA": "Brasileirão",
+        "PL": "Premier League",
+        "PD": "La Liga",
+        "BL1": "Bundesliga"
+    }
+
+    return nomes.get(codigo, "campeonato")
+
+def artigo_competicao(codigo):
+    artigos = {
+        "BSA": "no",
+        "PL": "na",
+        "PD": "na",
+        "BL1": "na",
+        "SA": "na",
+        "FL1": "na"
+    }
+
+    return artigos.get(codigo, "na")
+    
 def identificar_tipo_jogo(pergunta):
     texto = pergunta.lower()
 
@@ -909,6 +1022,20 @@ def identificar_tipo_jogo(pergunta):
         or "quando o " in texto and " joga" in texto
     ):
         return "proximo"
+
+    if (
+        "últimos jogos" in texto
+        or "ultimos jogos" in texto
+        or "últimos cinco jogos" in texto
+        or "ultimos cinco jogos" in texto
+        or "últimos 5 jogos" in texto
+        or "ultimos 5 jogos" in texto
+        or "últimas partidas" in texto
+        or "ultimas partidas" in texto
+        or "últimas cinco partidas" in texto
+        or "ultimas cinco partidas" in texto
+    ):
+        return "ultimos"
 
 
     if (
@@ -1078,6 +1205,65 @@ def conversar(pergunta: Pergunta):
             + ", no dia "
             + data_jogo
             + "."
+        )
+
+        return {
+            "response": resposta
+        }
+
+    if tipo_jogo == "ultimos":
+        time = identificar_time(pergunta.pergunta)
+
+        if time is None:
+            return {
+                "response": "Não consegui identificar o time na pergunta."
+            }
+
+        id_time = obter_id_time(time)
+        nome_time = nome_exibicao_time(time)
+
+        if id_time is None:
+            return {
+                "response": f"Não consegui encontrar informações sobre o time {nome_time}."
+            }
+
+        jogos = buscar_ultimos_jogos(id_time, 5)
+
+        if isinstance(jogos, dict) and "erro" in jogos:
+            return {
+                "response": f"Não consegui encontrar os últimos jogos: {jogos['erro']}"
+            }
+
+        if not jogos:
+            return {
+                "response": f"Não encontrei jogos finalizados recentemente do {nome_time}."
+            }
+
+        linhas = []
+
+        for jogo in jogos:
+            time_casa = normalizar_nome_time(jogo["mandante"])
+            time_consultado = normalizar_nome_time(time)
+
+            if time_casa == time_consultado:
+                adversario = nome_exibicao_api(jogo["visitante"]) 
+                gols_time = jogo["gols_mandante"]
+                gols_adversario = jogo["gols_visitante"]
+            else:
+                adversario = nome_exibicao_api(jogo["mandante"]) 
+                gols_time = jogo["gols_visitante"]
+                gols_adversario = jogo["gols_mandante"]
+
+            data_jogo = formatar_data_jogo(jogo["data"])
+
+            linhas.append(
+                f"{data_jogo}: {nome_time} {gols_time} x {gols_adversario} {adversario}"
+            )
+
+        resposta = (
+            f"Estes são os últimos {len(jogos)} jogos finalizados "
+            f"do {nome_time}:\n\n"
+            + "\n".join(linhas)
         )
 
         return {
@@ -1387,11 +1573,18 @@ def conversar(pergunta: Pergunta):
 
     if time is not None:
 
-        classificacao = buscar_classificacao_competicao("BSA")
+        codigo_competicao = identificar_competicao(
+            pergunta.pergunta,
+            time
+        )
+
+        classificacao = buscar_classificacao_competicao(
+            codigo_competicao
+        )
 
         if isinstance(classificacao, dict) and "erro" in classificacao:
             return {
-                "response": "Não consegui consultar a classificação do campeonato no momento."
+                "response": "Não consegui buscar a classificação da competição no momento."
             }
 
         nome_busca = normalizar_nome_time(time)
@@ -1401,7 +1594,7 @@ def conversar(pergunta: Pergunta):
         for item in classificacao:
             nome_classificacao = normalizar_nome_time(item["time"])
 
-            if nome_busca in nome_classificacao or nome_classificacao in nome_busca:
+            if nome_busca == nome_classificacao or nome_busca in nome_classificacao or nome_classificacao in nome_busca:
                 dados = item
                 break
 
@@ -1418,10 +1611,13 @@ def conversar(pergunta: Pergunta):
     or "como ficou" in texto
     or "qual foi a campanha" in texto
     or "me fale sobre a campanha" in texto):
+
+        campeonato = nome_exibicao_competicao(codigo_competicao)
+        
         return {
             "response": (
                 f"O {dados['time']} está atualmente na "
-                f"{dados['posicao']}ª posição do Brasileirão, com {dados['pontos']} pontos "
+                f"{dados['posicao']}ª posição {artigo_competicao(codigo_competicao)} {campeonato}, com {dados['pontos']} pontos "
                 f"em {dados['jogos']} jogos. Até o momento, foram {dados['vitorias']} vitórias, "
                 f"{dados['empates']} empates e {dados['derrotas']} derrotas."
             )
@@ -1431,14 +1627,17 @@ def conversar(pergunta: Pergunta):
 
     if dado is not None:
 
+        campeonato = nome_exibicao_competicao(codigo_competicao)
+
         respostas = {
-            "pontos": f"O {dados['time']} fez {dados['pontos']} pontos no Brasileirão.",
-            "posicao": f"O {dados['time']} está atualmente na {dados['posicao']}ª posição do Brasileirão.",
-            "jogos": f"O {dados['time']} jogou {dados['jogos']} partidas no Brasileirão.",
-            "vitorias": f"O {dados['time']} venceu {dados['vitorias']} jogos no Brasileirão.",
-            "empates": f"O {dados['time']} empatou {dados['empates']} jogos no Brasileirão.",
-            "derrotas": f"O {dados['time']} perdeu {dados['derrotas']} jogos no Brasileirão."
+            "pontos": f"O {dados['time']} fez {dados['pontos']} pontos {artigo_competicao(codigo_competicao)} {campeonato}.",
+            "posicao": f"O {dados['time']} está atualmente na {dados['posicao']}ª posição {artigo_competicao(codigo_competicao)} {campeonato}.",
+            "jogos": f"O {dados['time']} jogou {dados['jogos']} partidas {artigo_competicao(codigo_competicao)} {campeonato}.",
+            "vitorias": f"O {dados['time']} venceu {dados['vitorias']} jogos {artigo_competicao(codigo_competicao)} {campeonato}.",
+            "empates": f"O {dados['time']} empatou {dados['empates']} jogos {artigo_competicao(codigo_competicao)} {campeonato}.",
+            "derrotas": f"O {dados['time']} perdeu {dados['derrotas']} jogos {artigo_competicao(codigo_competicao)} {campeonato}."
         }
+
 
         return {
             "response": respostas[dado]

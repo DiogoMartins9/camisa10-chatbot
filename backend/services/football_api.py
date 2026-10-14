@@ -363,6 +363,24 @@ def buscar_ultimo_jogo(team_id):
 
     return jogos[-1]
 
+def buscar_ultimos_jogos(team_id, limite=5):
+    jogos = buscar_jogos_time(team_id, "FINISHED")
+
+    if isinstance(jogos, dict) and "erro" in jogos:
+        return jogos
+
+    if not jogos:
+        return []
+
+    jogos.sort(
+        key=lambda jogo: datetime.fromisoformat(
+            jogo["data"].replace("Z", "+00:00")
+        ),
+        reverse=True
+    )
+
+    return jogos[:limite]
+
 def buscar_proximo_jogo(team_id):
     jogos = buscar_jogos_time(team_id, "SCHEDULED")
 
