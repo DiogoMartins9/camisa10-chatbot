@@ -3,7 +3,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
+from backend.services.football_api import (buscar_competicoes_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta
@@ -271,19 +271,27 @@ def identificar_dado_classificacao(pergunta):
 
     texto = pergunta.lower()
 
-    if "posicao" in texto or "posição" in texto or "lugar" in texto:
+    if (
+        "classificação" in texto
+        or "classificacao" in texto
+        or "posição" in texto
+        or "posicao" in texto
+        or "lugar" in texto
+        or "colocação" in texto
+        or "colocacao" in texto
+    ):
         return "posicao"
 
     if "ponto" in texto or "pontos" in texto:
         return "pontos"
 
-    if "vitoria" in texto or "vitória" in texto or "venceu" in texto:
+    if "vitoria" in texto or "vitória" in texto or "venceu" in texto or "ganhou" in texto:
         return "vitorias"
 
     if "empate" in texto or "empatou" in texto:
         return "empates"
     
-    if "derrota" in texto or "perdeu" in texto:
+    if "derrota" in texto or "perdeu" in texto or "foi derrotado" in texto:
         return "derrotas"
 
     if "jogo" in texto or "partida" in texto:
@@ -888,8 +896,19 @@ def buscar_dados_classificacao_time(nome_time, codigo_competicao):
 
     nome_busca = normalizar_nome_time(nome_time)
 
+    aliases = {
+        "milan": ["ac milan", "milan"],
+        "ac milan": ["ac milan", "milan"],
+        "barcelona": ["barcelona", "fc barcelona"],
+        "real madrid": ["real madrid", "real"]
+    }
+
+    nomes_aceitos = aliases.get(nome_busca, [nome_busca])
+
     for time in classificacao:
-        if normalizar_nome_time(time["time"]) == nome_busca:
+        nome_api = normalizar_nome_time(time["time"])
+
+        if nome_api in nomes_aceitos:
             return time
 
     return {
@@ -898,85 +917,109 @@ def buscar_dados_classificacao_time(nome_time, codigo_competicao):
 
 def identificar_competicao(pergunta, nome_time):
     texto = normalizar_nome_time(pergunta)
-    time = normalizar_nome_time(nome_time)
 
-    if any(nome in texto for nome in [
-        "premier league",
-        "campeonato inglês",
-        "campeonato ingles"
-    ]):
-        return "PL"
+    palavras_competicoes = {
+        "PL": [
+            "premier league",
+            "campeonato ingles",
+            "liga inglesa"
+        ],
+        "PD": [
+            "la liga",
+            "campeonato espanhol",
+            "liga espanhola",
+            "primera division"
+        ],
+        "SA": [
+            "serie a",
+            "serie a italiana",
+            "campeonato italiano",
+            "liga italiana"
+        ],
+        "BL1": [
+            "bundesliga",
+            "campeonato alemao",
+            "liga alema"
+        ],
+        "FL1": [
+            "ligue 1",
+            "campeonato frances",
+            "liga francesa"
+        ],
+        "BSA": [
+            "brasileirao",
+            "campeonato brasileiro",
+            "serie a brasileira"
+        ],
+        "CL": [
+            "champions league",
+            "liga dos campeoes"
+        ],
+        "CLI": [
+            "libertadores",
+            "copa libertadores"
+        ],
+        "EC": [
+            "eurocopa",
+            "campeonato europeu de selecoes"
+        ],
+        "WC": [
+            "copa do mundo",
+            "fifa world cup"
+        ]
+    }
 
-    if any(nome in texto for nome in [
-        "la liga",
-        "campeonato espanhol"
-    ]):
-        return "PD"
+    for codigo, nomes in palavras_competicoes.items():
+        if any(nome in texto for nome in nomes):
+            return codigo
 
-    if any(nome in texto for nome in [
-        "serie a",
-        "campeonato italiano"
-    ]):
-        return "SA"
+    competicoes_por_time = {
+        "arsenal": "PL",
+        "arsenal fc": "PL",
+        "sao paulo": "BSA",
+        "sao paulo fc": "BSA",
+        "spfc": "BSA",
+        "palmeiras": "BSA",
+        "se palmeiras": "BSA",
+        "flamengo": "BSA",
+        "cr flamengo": "BSA",
+        "corinthians": "BSA",
+        "santos": "BSA",
+        "fluminense": "BSA",
+        "real madrid": "PD",
+        "barcelona": "PD",
+        "atletico de madrid": "PD",
+        "milan": "SA",
+        "inter de milao": "SA",
+        "bayern de munique": "BL1",
+        "borussia dortmund": "BL1",
+        "manchester city": "PL",
+        "manchester city fc": "PL",
+        "man city": "PL",
+        "manchester united": "PL",
+        "liverpool": "PL",
+        "liverpool fc": "PL",
+        "chelsea": "PL",
+        "tottenham": "PL",
+        "psg": "FL1"
+    }
 
-    if any(nome in texto for nome in [
-        "bundesliga",
-        "campeonato alemão",
-        "campeonato alemao"
-    ]):
-        return "BL1"
+    if nome_time:
+        nome_normalizado = normalizar_nome_time(nome_time)
+        codigo = competicoes_por_time.get(nome_normalizado)
 
-    if any(nome in texto for nome in [
-        "ligue 1",
-        "campeonato francês",
-        "campeonato frances"
-    ]):
-        return "FL1"
+        if codigo:
+            return codigo
 
-    if any(nome in texto for nome in [
-        "campeonato brasileiro",
-        "campeonato brasileiro série a",
-        "campeonato brasileiro serie a",
-        "brasileirão",
-        "brasileirao"
-    ]):
-        return "BSA"
-
-    if any(nome in texto for nome in [
-        "libertadores",
-        "copa libertadores"
-    ]):
-        return "CL"
-
-    if any(nome in texto for nome in [
-        "champions",
-        "liga dos campeões",
-        "liga dos campeoes"
-    ]):
-        return "CL"
-
-    if time in [
-        "barcelona",
-        "sevilla",
-        "real madrid"
-    ]:
-        return "PD"
-
-    if time in [
-        "manchester city",
-        "manchester united",
-        "liverpool",
-        "chelsea",
-        "arsenal"
-    ]:
-        return "PL"
+    return None
 
 def nome_exibicao_competicao(codigo):
     nomes = {
         "BSA": "Brasileirão",
         "PL": "Premier League",
         "PD": "La Liga",
-        "BL1": "Bundesliga"
+        "BL1": "Bundesliga",
+        "SA": "Serie A"
     }
 
     return nomes.get(codigo, "campeonato")
@@ -1578,31 +1621,42 @@ def conversar(pergunta: Pergunta):
             time
         )
 
-        classificacao = buscar_classificacao_competicao(
-            codigo_competicao
-        )
+        if codigo_competicao is not None:
+            classificacao = buscar_classificacao_competicao(
+                codigo_competicao
+            )
 
-        if isinstance(classificacao, dict) and "erro" in classificacao:
+            if isinstance(classificacao, dict) and "erro" in classificacao:
+                return {
+                    "response": "Não consegui buscar a classificação da competição no momento."
+                }
+
+            nome_busca = normalizar_nome_time(time)
+
+            dados = None
+
+            for item in classificacao:
+                nome_classificacao = normalizar_nome_time(item["time"])
+
+                if nome_busca == nome_classificacao or nome_busca in nome_classificacao or nome_classificacao in nome_busca:
+                    dados = item
+                    break
+
+            if dados is None:
+                return {
+                    "response": f"Não encontrei o {nome_exibicao_time(time)} na classificação atual."
+                }
+
+        else: 
             return {
-                "response": "Não consegui buscar a classificação da competição no momento."
+                "response": (
+                    f"Não consegui identificar a competição do "
+                    f"{nome_exibicao_time(time)}. "
+                    "Informe também o campeonato, como Brasileirão, "
+                    "Premier League ou La Liga."
+                )
             }
-
-        nome_busca = normalizar_nome_time(time)
-
-        dados = None
-
-        for item in classificacao:
-            nome_classificacao = normalizar_nome_time(item["time"])
-
-            if nome_busca == nome_classificacao or nome_busca in nome_classificacao or nome_classificacao in nome_busca:
-                dados = item
-                break
-
-        if dados is None:
-            return {
-                "response": f"Não encontrei o {nome_exibicao_time(time)} na classificação atual."
-            }
-
+            
     texto = pergunta.pergunta.lower()
 
     if (
