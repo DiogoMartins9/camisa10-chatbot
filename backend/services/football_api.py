@@ -12,6 +12,14 @@ FOOTBALL_DATA_TOKEN = os.getenv("FOOTBALL_DATA_TOKEN")
 
 BASE_URL = "https://v3.football.api-sports.io"
 
+_CACHE_COMPETICOES = {
+    "dados": None,
+    "atualizado_em": 0
+}
+
+_CACHE_TIMES_COMPETICAO = {}
+TEMPO_CACHE_SEGUNDOS = 3600
+
 
 def normalizar_nome_time(nome):
     if not nome:
@@ -352,8 +360,15 @@ def buscar_classificacao_competicao(codigo_competicao):
 
 
 def buscar_competicoes_football_data():
-    url = "https://api.football-data.org/v4/competitions"
+    agora = time.time()
 
+    if (
+        _CACHE_COMPETICOES["dados"] is not None
+        and agora - _CACHE_COMPETICOES["atualizado_em"] < TEMPO_CACHE_SEGUNDOS
+    ):
+        return _CACHE_COMPETICOES["dados"]
+
+    url = "https://api.football-data.org/v4/competitions"
     headers = {
         "X-Auth-Token": FOOTBALL_DATA_TOKEN
     }
@@ -364,14 +379,15 @@ def buscar_competicoes_football_data():
             headers=headers,
             timeout=30
         )
-
         dados = resposta.json()
-
     except requests.RequestException as erro:
-        return {"erro": str(erro)}
-
+        return {
+            "erro": str(erro)
+        }
     except ValueError:
-        return {"erro": "A API retornou uma resposta inválida."}
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
 
     if resposta.status_code != 200:
         return {
@@ -389,7 +405,63 @@ def buscar_competicoes_football_data():
             "pais": competicao.get("area", {}).get("name")
         })
 
+    _CACHE_COMPETICOES["dados"] = competicoes
+    _CACHE_COMPETICOES["atualizado_em"] = time.time()
+
     return competicoes
+
+def buscar_times_competicao(codigo_competicao):
+    agora = time.time()
+
+    cache = _CACHE_TIMES_COMPETICAO.get(codigo_competicao)
+
+    if cache and agora - cache["atualizado_em"] < TEMPO_CACHE_SEGUNDOS:
+        return cache["dados"]
+
+    url = (
+        "https://api.football-data.org/v4/competitions/"
+        f"{codigo_competicao}/teams"
+    )
+
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+    }
+
+    try:
+        resposta = requests.get(url, headers=headers, timeout=30)
+        dados = resposta.json()
+    except requests.RequestException as erro:
+        return {
+            "erro": str(erro)
+        }
+    except ValueError:
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
+
+    if resposta.status_code != 200:
+        return {
+            "erro": dados,
+            "codigo": resposta.status_code
+        }
+
+    times = []
+
+    for time_api in dados.get("teams", []):
+        times.append({
+            "id": time_api.get("id"),
+            "nome": time_api.get("name"),
+            "pais": time_api.get("area", {}).get("name"),
+            "competicoes": time_api.get("runningCompetitions", [])
+        })
+
+    _CACHE_TIMES_COMPETICAO[codigo_competicao] = {
+        "dados": times,
+        "atualizado_em": time.time()
+    }
+
+    return times
+
 
 def buscar_competicoes_do_time(nome_time):
     competicoes = buscar_competicoes_football_data()
@@ -436,57 +508,38 @@ def buscar_competicoes_do_time(nome_time):
 
 
 def buscar_time_football_data(nome_time):
-    url = "https://api.football-data.org/v4/teams"
-
-    headers = {
-        "X-Auth-Token": FOOTBALL_DATA_TOKEN
-    }
-
-    try:
-        resposta = requests.get(
-            url,
-            headers=headers,
-            timeout=15
-        )
-
-        dados = resposta.json()
-
-    except requests.RequestException as erro:
-        return {
-            "erro": str(erro)
-            }  
-
-    except ValueError:
-        return {
-            "erro": "A API retornou uma resposta inválida"
-        }  
-
-    if resposta.status_code == 429:
-        return {
-            "erro": "Limite de requisições atingido. Aguarde antes de tentar novamente.",
-            "codigo": 429
-        }
-
-    if resposta.status_code != 200:
-        return {
-            "erro": dados
-        }
-
     nome_buscado = normalizar_nome_time(nome_time)
 
-    for time in dados.get("teams", []):
-        nome_api = normalizar_nome_time(time.get("name", ""))
+    competicoes = buscar_competicoes_football_data()
 
-        if nome_buscado == nome_api:
-            return {
-                "id": time.get("id"),
-                "nome": time.get("name"),
-                "pais": time.get("area", {}).get("name"),
-                "competicoes": time.get("runningCompetitions", [])
-            }
+    if isinstance(competicoes, dict) and "erro" in competicoes:
+        return competicoes
+
+    for competicao in competicoes:
+        codigo = competicao.get("codigo")
+
+        if not codigo:
+            continue
+
+        times = buscar_times_competicao(codigo)
+
+        if isinstance(times, dict) and "erro" in times:
+            continue
+
+        for time_api in times:
+            nome_api = normalizar_nome_time(time_api.get("nome", ""))
+            nome_buscado_sem_sufixo = nome_buscado.removesuffix(" fc")
+            nome_api_sem_sufixo = nome_api.removesuffix(" fc")
+
+            if (
+                nome_buscado == nome_api
+                or nome_buscado_sem_sufixo == nome_api_sem_sufixo
+                
+            ):
+                return time_api
 
     return {
-        "erro": f"Time '{nome_time}' não encontrado na API."
+        "erro": f"Time '{nome_time}' não encontrado nas competições disponíveis."
     }
 
 def buscar_ultimo_jogo(team_id):

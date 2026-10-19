@@ -3,7 +3,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_competicoes_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
+from backend.services.football_api import (buscar_competicoes_football_data, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta
@@ -931,7 +931,6 @@ def identificar_competicao(pergunta, nome_time):
             "primera division"
         ],
         "SA": [
-            "serie a",
             "serie a italiana",
             "campeonato italiano",
             "liga italiana"
@@ -953,6 +952,8 @@ def identificar_competicao(pergunta, nome_time):
         ],
         "CL": [
             "champions league",
+            "champions",
+            "liga dos campeões"
             "liga dos campeoes"
         ],
         "CLI": [
@@ -973,43 +974,26 @@ def identificar_competicao(pergunta, nome_time):
         if any(nome in texto for nome in nomes):
             return codigo
 
-    competicoes_por_time = {
-        "arsenal": "PL",
-        "arsenal fc": "PL",
-        "sao paulo": "BSA",
-        "sao paulo fc": "BSA",
-        "spfc": "BSA",
-        "palmeiras": "BSA",
-        "se palmeiras": "BSA",
-        "flamengo": "BSA",
-        "cr flamengo": "BSA",
-        "corinthians": "BSA",
-        "santos": "BSA",
-        "fluminense": "BSA",
-        "real madrid": "PD",
-        "barcelona": "PD",
-        "atletico de madrid": "PD",
-        "milan": "SA",
-        "inter de milao": "SA",
-        "bayern de munique": "BL1",
-        "borussia dortmund": "BL1",
-        "manchester city": "PL",
-        "manchester city fc": "PL",
-        "man city": "PL",
-        "manchester united": "PL",
-        "liverpool": "PL",
-        "liverpool fc": "PL",
-        "chelsea": "PL",
-        "tottenham": "PL",
-        "psg": "FL1"
-    }
-
     if nome_time:
-        nome_normalizado = normalizar_nome_time(nome_time)
-        codigo = competicoes_por_time.get(nome_normalizado)
+        time_api = buscar_time_football_data(nome_time)
 
-        if codigo:
-            return codigo
+        if isinstance(time_api, dict) and "erro" in time_api:
+            return None
+
+        competicoes = time_api.get("competicoes", [])
+
+        ligas = [
+            competicao
+            for competicao in competicoes
+            if competicao.get("type") == "LEAGUE"
+            and competicao.get("code")
+        ]
+
+        if len(ligas) == 1:
+            return ligas[0]["code"]
+
+        if len(ligas) > 1:
+            return None
 
     return None
 
@@ -1019,6 +1003,7 @@ def nome_exibicao_competicao(codigo):
         "PL": "Premier League",
         "PD": "La Liga",
         "BL1": "Bundesliga",
+        "CL": "Champions League",
         "SA": "Serie A"
     }
 
