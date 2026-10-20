@@ -3,7 +3,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_competicoes_football_data, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
+from backend.services.football_api import (buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta
@@ -239,6 +239,7 @@ def nome_exibicao_time(nome_time):
         "cruzeiro": "Cruzeiro",
         "atletico mg": "Atlético-MG",
         "bahia": "Bahia",
+        "barcelona": "Barcelona",
         "fortaleza": "Fortaleza"
     }
 
@@ -298,6 +299,58 @@ def identificar_dado_classificacao(pergunta):
         return "jogos"
 
     return None
+
+
+def comparar_conceitos_futebol(pergunta):
+    texto = pergunta.lower()
+
+    palavras_comparacao = [
+        "qual a diferença",
+        "qual é a diferença",
+        "qual a diferenca",
+        "qual é a diferenca",
+        "diferença entre",
+        "diferenca entre",
+        "compare",
+        "comparar"
+    ]
+
+    if not any(expressao in texto for expressao in palavras_comparacao):
+        return None
+
+    conceitos = {
+        "impedimento": "impedimento",
+        "falta": "falta",
+        "escanteio": "escanteio",
+        "tiro de meta": "tiro_de_meta",
+        "gol": "gol",
+        "pênalti": "penalti",
+        "penalti": "penalti",
+        "cartão amarelo": "cartao_amarelo",
+        "cartao amarelo": "cartao_amarelo",
+        "cartão vermelho": "cartao_vermelho",
+        "cartao vermelho": "cartao_vermelho"
+    }
+
+    encontrados = []
+
+    for termo, chave in conceitos.items():
+        if termo in texto and chave not in encontrados:
+            encontrados.append(chave)
+
+    if len(encontrados) < 2:
+        return None
+
+    partes = []
+
+    for chave in encontrados:
+        if chave in CONHECIMENTO_FUTEBOL:
+            partes.append(CONHECIMENTO_FUTEBOL[chave])
+
+    if len(partes) < 2:
+        return None
+
+    return "\n\n".join(partes)
 
 def buscar_conhecimento(pergunta):
 
@@ -417,6 +470,26 @@ def buscar_conhecimento(pergunta):
 
 def identificar_intencao_tatica(pergunta):
     texto = pergunta.lower()
+
+    conceitos_comparados = [
+        "linha alta", "linha_alta",
+        "pressão alta", "pressao alta", "pressao_alta",
+        "bloco baixo", "bloco_baixo",
+        "contra-ataque", "contra ataque",
+        "transição", "transicao"
+    ]
+
+    quantidade_conceitos = sum(
+        1 for conceito in conceitos_comparados
+        if conceito in texto
+    )
+
+    if any(expressao in texto for expressao in [
+        "qual a diferença", "qual é a diferença",
+        "quais as diferenças", "compare", "comparar",
+        "diferença entre", "diferenca entre"
+    ]) and quantidade_conceitos >= 2:
+        return None
 
     if "falso 9" in texto and "falso 9" in texto:
         return "falso_9"
@@ -693,6 +766,19 @@ def gerar_resposta_ollama(pergunta, dados):
                 IMPORTANTE:
                 - Não omita informações importantes presentes nos dados fornecidos.
                 - Não invente informações que não estejam presentes nos dados.
+                - Antes de responder, identifique todos os conceitos de futebol mencionados na pergunta.
+                - Se a pergunta pedir a diferença ou comparação entre conceitos, a resposta deve
+                obrigatoriamente abordar todos eles.
+                - Para comparações entre dois conceitos, organize a resposta em três partes:
+                1. Primeiro conceito: explique sua definição.
+                2. Segundo conceito: explique sua definição.
+                3. Diferença principal: explique objetivamente o que distingue os dois.
+                - Use os dados fornecidos pelo sistema sempre que estiverem disponíveis.
+                - Se os dados de um conceito não estiverem disponíveis, explique apenas o que
+                souber com segurança, sem inventar informações.
+                - Nunca considere uma comparação respondida se apenas um dos conceitos tiver sido explicado.
+                - Quando houver um conceito identificado pelo sistema, use-o como referência,
+                mas respeite todos os elementos solicitados na pergunta.
                 - Não faça avaliações, julgamentos ou opiniões sobre o desempenho de times ou jogadores.
                 - Não use termos como "bom", "ruim", "razoável", "decente", "fraco", "forte",
                 "intermediário" ou semelhantes para avaliar uma campanha
@@ -1027,11 +1113,18 @@ def identificar_tipo_jogo(pergunta):
     if (
                 " x " in texto
                 or " contra " in texto
-                or " entre " in texto
                 or " vs " in texto
                 or " versus " in texto
-        ):
-            return "confronto"
+    ):
+        return "confronto"
+
+    if (
+        "próximos jogos" in texto
+        or "proximos jogos" in texto
+        or "próximas partidas" in texto
+        or "proximas partidas" in texto
+    ):
+        return "proximos"
 
     if (
         "próximo jogo" in texto
@@ -1146,10 +1239,60 @@ def gerar_resposta_tatica(dados):
     if "caracteristicas" in info:
         resposta += f"\n\nCaracterísticas: {info['caracteristicas']}"
 
+    if "vantagens" in info:
+        resposta += f"\n\nVantagens: {info['vantagens']}"
+
+    if "desvantagens" in info:
+        resposta += f"\n\nDesvantagens: {info['desvantagens']}"
+
     return resposta
 
 @app.post("/api/chat")
 def conversar(pergunta: Pergunta):
+    texto_pergunta = pergunta.pergunta.lower()
+
+    termos_comparacao = [
+        "qual a diferença",
+        "qual é a diferença",
+        "diferença entre",
+        "diferenca entre",
+        "compare",
+        "comparar"
+    ]
+
+    if any(termo in texto_pergunta for termo in termos_comparacao):
+        conceitos = {
+            "linha alta": "linha_alta",
+            "linha_alta": "linha_alta",
+            "pressão alta": "pressao_alta",
+            "pressao alta": "pressao_alta",
+            "pressao_alta": "pressao_alta",
+            "bloco baixo": "bloco_baixo",
+            "bloco_baixo": "bloco_baixo",
+            "contra-ataque": "contra_ataque",
+            "contra ataque": "contra_ataque",
+            "transição": "transicao",
+            "transicao": "transicao"
+        }
+
+        encontrados = []
+        for termo, conceito in conceitos.items():
+            if termo in texto_pergunta and conceito not in encontrados:
+                encontrados.append(conceito)
+
+        if len(encontrados) >= 2:
+            partes = []
+
+            for conceito in encontrados:
+                info = CONHECIMENTO_TATICO[conceito]
+                partes.append(
+                    f"{info['nome']}: {info['descricao']}"
+                )
+
+            return {
+                "response": "\n\n".join(partes)
+            }
+
     intencao_tatica = identificar_intencao_tatica(pergunta.pergunta)
 
     if intencao_tatica:
@@ -1167,6 +1310,13 @@ def conversar(pergunta: Pergunta):
     if not pergunta_e_de_futebol(pergunta.pergunta):
         return {
             "response": "Posso ajudar apenas com assuntos relacionados ao futebol."
+        }
+
+    resposta_comparacao = comparar_conceitos_futebol(pergunta.pergunta)
+
+    if resposta_comparacao:
+        return {
+            "response": resposta_comparacao
         }
 
     conhecimento = buscar_conhecimento(pergunta.pergunta)
@@ -1233,6 +1383,49 @@ def conversar(pergunta: Pergunta):
             + ", no dia "
             + data_jogo
             + "."
+        )
+
+        return {
+            "response": resposta
+        }
+
+    if tipo_jogo == "proximos":
+        time = identificar_time(pergunta.pergunta)
+
+        if time is None:
+            return {
+                "response": "Não consegui identificar o time na pergunta."
+            }
+
+        id_time = obter_id_time(time)
+        nome_time = nome_exibicao_time(time)
+
+        if id_time is None:
+            return {
+                "response": f"Não consegui encontrar informações sobre o time {nome_time}."
+            }
+
+        jogos = buscar_proximos_jogos(id_time, 5)
+
+        if isinstance(jogos, dict) and "erro" in jogos:
+            return {
+                "response": f"Não consegui encontrar os próximos jogos: {jogos['erro']}"
+            }
+
+        linhas = []
+
+        for jogo in jogos:
+            mandante = nome_exibicao_api(jogo["mandante"])
+            visitante = nome_exibicao_api(jogo["visitante"])
+            data_jogo = formatar_data_jogo(jogo["data"])
+
+            linhas.append(
+                f"{data_jogo}: {mandante} x {visitante}"
+            )
+
+        resposta = (
+            f"Estes são os próximos {len(jogos)} jogos do {nome_time}:\n\n"
+            + "\n".join(linhas)
         )
 
         return {

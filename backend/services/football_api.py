@@ -586,6 +586,19 @@ def buscar_proximo_jogo(team_id):
 
     return jogos[0]
 
+def buscar_proximos_jogos(team_id, quantidade=5):
+    jogos = buscar_jogos_time(team_id, "SCHEDULED")
+
+    if isinstance(jogos, dict) and "erro" in jogos:
+        return jogos
+
+    if not jogos:
+        return {
+            "erro": "Nenhum próximo jogo encontrado."
+        }
+
+    return jogos[:quantidade]
+
 def buscar_historico_confrontos(id_partida, limite=10):
     url = (
         f"https://api.football-data.org/v4/"
