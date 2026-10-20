@@ -324,6 +324,8 @@ def comparar_conceitos_futebol(pergunta):
         "escanteio": "escanteio",
         "tiro de meta": "tiro_de_meta",
         "gol": "gol",
+        "assistência": "assistencia",
+        "assistencia": "assistencia",
         "pênalti": "penalti",
         "penalti": "penalti",
         "cartão amarelo": "cartao_amarelo",
@@ -350,13 +352,148 @@ def comparar_conceitos_futebol(pergunta):
     if len(partes) < 2:
         return None
 
-    return "\n\n".join(partes)
+    resposta = "\n\n".join(partes)
+
+    diferencas = {
+        ("escanteio", "tiro_de_meta"): (
+            "A diferença principal é quem tocou na bola por último antes "
+            "de ela sair pela linha de fundo: no escanteio, foi um defensor; "
+            "no tiro de meta, foi um atacante."
+        ),
+        ("impedimento", "falta"): (
+            "A diferença principal é que o impedimento está relacionado "
+            "à posição e à participação do atacante na jogada, enquanto "
+            "a falta envolve uma infração às regras, como uma ação irregular "
+            "contra um adversário."
+        ),
+        ("cartao_amarelo", "cartao_vermelho"): (
+            "A diferença principal é a consequência disciplinar: o cartão amarelo "
+            "é uma advertência, enquanto o cartão vermelho resulta na expulsão "
+            "do jogador. Um jogador que recebe dois cartões amarelos na mesma partida "
+            "também é expulso."
+        ),
+        ("gol", "assistencia"): (
+            "A diferença principal é que o gol é marcado pelo jogador que "
+            "coloca a bola na meta adversária, enquanto a assistência é o "
+            "passe ou a ação que contribui diretamente para a marcação do gol."
+        ),
+        ("falta", "gol"): (
+            "A diferença principal é que a falta é uma infração às regras do futebol, "
+            "enquanto o gol é uma forma de pontuar quando a bola ultrapassa completamente "
+            "a linha de gol, entre as traves e por baixo do travessão, sem infração "
+            "da equipe que marcou."
+        ),
+        ("impedimento", "escanteio"): (
+            "A diferença principal é que o impedimento está relacionado à posição "
+            "e à participação de um jogador atacante na jogada, enquanto o escanteio "
+            "é uma forma de reiniciar o jogo quando a bola sai pela linha de fundo "
+            "após o último toque de um jogador da equipe defensora, sem que seja gol."
+        ),
+        ("gol", "impedimento"): (
+            "A diferença principal é que o gol é uma forma de pontuar quando "
+            "a bola ultrapassa completamente a linha de gol, enquanto o impedimento "
+            "é uma infração relacionada à posição e à participação de um atacante "
+            "na jogada. Um gol pode ser anulado se houver impedimento na jogada."
+        ),
+        ("falta", "penalti"): (
+            "A diferença principal é que a falta é uma infração às regras do futebol "
+            "que pode resultar em tiro livre direto ou indireto, enquanto o pênalti "
+            "é uma cobrança concedida quando a equipe defensora comete, dentro da "
+            "própria área penal, uma infração punível com tiro livre direto."
+        ),
+        ("cartao_amarelo", "falta"): (
+            "A diferença principal é que a falta é uma infração às regras do futebol, "
+            "enquanto o cartão amarelo é uma punição disciplinar aplicada pelo árbitro. "
+            "Uma falta pode resultar em cartão amarelo, mas nem toda falta recebe essa punição."
+        ),
+        ("escanteio", "falta"): (
+            "A diferença principal é que a falta ocorre quando um jogador comete "
+            "uma infração às regras, enquanto o escanteio é uma forma de reiniciar "
+            "o jogo quando a bola sai pela linha de fundo após o último toque de "
+            "um jogador da equipe defensora, sem que seja gol."
+        ),
+        ("assistencia", "impedimento"): (
+            "A diferença principal é que a assistência é o passe ou a ação que "
+            "contribui diretamente para um gol, enquanto o impedimento é uma "
+            "infração relacionada à posição e à participação de um atacante na jogada. "
+            "Uma assistência pode ocorrer em uma jogada regular, sem impedimento."
+        ),
+    }
+
+    for (conceito_a, conceito_b), diferenca in diferencas.items():
+        if conceito_a in encontrados and conceito_b in encontrados:
+            resposta += "\n\n" + diferenca
+            break
+
+        if conceito_b in encontrados and conceito_a in encontrados:
+            resposta += "\n\n" + diferenca
+            break
+
+    return resposta
 
 def buscar_conhecimento(pergunta):
 
     texto = pergunta.lower()
 
+    if (
+        "linha de fundo" in texto
+        and "goleiro" in texto
+        and (
+            "defender" in texto
+            or "defendeu" in texto
+            or "defesa" in texto
+        )
+    ):
+        return CONHECIMENTO_FUTEBOL["escanteio"]
+
+    if (
+        "linha de fundo" in texto
+        and (
+            "atacante" in texto
+            or "equipe atacante" in texto
+        )
+        and (
+            "tocou por último" in texto
+            or "tocou por ultimo" in texto
+            or "último no atacante" in texto
+            or "ultimo no atacante" in texto
+        )
+    ):
+        return CONHECIMENTO_FUTEBOL["tiro_de_meta"]
+
+    if (
+        "linha de fundo" in texto
+        and (
+            "zagueiro" in texto
+            or "defensor" in texto
+        )
+        and (
+            "tocou por último" in texto
+            or "tocou por ultimo" in texto
+            or "último no zagueiro" in texto
+            or "ultimo no zagueiro" in texto
+        )
+    ):
+        return CONHECIMENTO_FUTEBOL["escanteio"]
+
+    if (
+        "dois amarelos" in texto
+        or "dois cartões amarelos" in texto
+        or "dois cartoes amarelos" in texto
+        or "segundo amarelo" in texto
+        or "segundo cartão amarelo" in texto
+        or "segundo cartao amarelo" in texto
+    ):
+        return (
+            "Quando um jogador recebe o segundo cartão amarelo na mesma "
+            "partida, ele recebe o cartão vermelho e é expulso. "
+            "Ele deve deixar o campo e não pode continuar jogando."
+        )
+
     if "impedimento" in texto:
+        return CONHECIMENTO_FUTEBOL["impedimento"]
+
+    if "impedido" in texto or "impedida" in texto:
         return CONHECIMENTO_FUTEBOL["impedimento"]
 
     if "champions" in texto and "2015" in texto:
@@ -390,6 +527,17 @@ def buscar_conhecimento(pergunta):
 
     if "pênalti" in texto or "penalti" in texto:
         return CONHECIMENTO_FUTEBOL["penalti"]
+
+    if ( 
+        "linha de fundo" in texto
+        and (
+            "último toque" in texto
+            or "ultimo toque" in texto
+            or "ninguém do ataque" in texto
+            or "ninguem do ataque" in texto
+        )
+    ):
+        return CONHECIMENTO_FUTEBOL["tiro_de_meta"]
 
     if "tiro de meta" in texto:
         return CONHECIMENTO_FUTEBOL["tiro_de_meta"]
@@ -850,10 +998,23 @@ def pergunta_e_de_futebol(pergunta):
 
     palavras_futebol = [
         "impedimento",
+        "impedido",
+        "impedida",
+        "ficar impedido",
+        "ficar impedida",
+        "dois amarelos",
+        "dois cartões amarelos",
+        "dois cartoes amarelos",
+        "segundo amarelo",
+        "segundo cartão amarelo",
+        "segundo cartao amarelo",
         "escanteio",
         "falta",
         "gol",
         "tiro de meta",
+        "linha de fundo",
+        "último toque",
+        "ultimo toque",
         "substituição",
         "substituicao",
         "assistência",
@@ -1311,7 +1472,7 @@ def conversar(pergunta: Pergunta):
         return {
             "response": "Posso ajudar apenas com assuntos relacionados ao futebol."
         }
-
+    
     resposta_comparacao = comparar_conceitos_futebol(pergunta.pergunta)
 
     if resposta_comparacao:
