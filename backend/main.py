@@ -436,6 +436,282 @@ def buscar_conhecimento(pergunta):
     texto = pergunta.lower()
 
     if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("espalma" in texto or "defende" in texto)
+        and ("novamente" in texto or "segunda vez" in texto)
+    ):
+        return (
+            "Sim. Se o goleiro defende o pênalti e toca na bola, "
+            "o cobrador pode tocá-la novamente e marcar o gol, "
+            "desde que não cometa outra infração."
+        )
+
+    if (
+        "pênalti" in texto or "penalti" in texto
+    ):
+        if (
+            ("trave" in texto or "rebote" in texto)
+            and ("cobrador" in texto or "cobrou" in texto)
+            and ("novamente" in texto or "outra vez" in texto)
+        ):
+            return (
+                "Não. Se a bola bate na trave e volta diretamente "
+                "para o cobrador, ele não pode tocá-la novamente "
+                "antes que outro jogador a toque. O árbitro deve "
+                "marcar tiro livre indireto para a equipe adversária."
+            )
+
+    if (
+        "impedimento" in texto
+        and ("falta" in texto or "livre direto" in texto)
+        and ("diretamente" in texto or "cobrança" in texto or "cobranca" in texto)
+    ):
+        return (
+            "Sim, o impedimento pode ser marcado em uma cobrança de "
+            "falta. Se o atacante estava em posição de impedimento no "
+            "momento da cobrança e participa ativamente da jogada, "
+            "o árbitro deve marcar tiro livre indireto para a equipe "
+            "defensora."
+        )
+
+    if (
+        "impedimento" in texto
+        and ("defensor" in texto or "adversário" in texto or "adversario" in texto)
+        and ("deliberadamente" in texto or "deliberada" in texto)
+        and ("afastar" in texto or "erra o passe" in texto or "erra" in texto)
+    ):
+        return (
+            "Em regra, não há impedimento se o defensor adversário "
+            "joga deliberadamente a bola e ela chega ao atacante. "
+            "A exceção ocorre quando se trata de uma defesa deliberada "
+            "de uma bola que ia para o gol ou muito próxima dele."
+        )
+
+    if (
+        "impedimento" in texto
+        and ("rebater" in texto or "rebote" in texto)
+        and "goleiro" in texto
+    ):
+        return (
+            "O árbitro deve marcar impedimento se o atacante já estava "
+            "em posição de impedimento quando um companheiro chutou a "
+            "bola e ele passou a participar da jogada após o rebote. "
+            "Uma defesa deliberada do goleiro não elimina o impedimento."
+        )
+
+    if (
+        "impedimento" in texto
+        and ("atrapalhando" in texto or "interferindo" in texto)
+        and ("defensor" in texto or "adversário" in texto or "adversario" in texto)
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "defensora, pois o atacante em posição de impedimento "
+            "está interferindo na capacidade do adversário de jogar a bola."
+        )
+
+    if (
+        ("mão" in texto or "mao" in texto)
+        and ("área" in texto or "area" in texto)
+        and (
+            "defensor" in texto
+            or "jogador" in texto
+        )
+    ):
+        if (
+            "fora da própria área" in texto
+            or "fora da propria area" in texto
+            or "fora da área" in texto
+            or "fora da area" in texto
+        ):
+            return (
+                "O árbitro deve marcar tiro livre direto para a equipe "
+                "adversária, pois a infração de mão na bola ocorreu "
+                "fora da área de pênalti."
+            )
+
+        if (
+            "dentro da própria área" in texto
+            or "dentro da propria area" in texto
+            or "dentro da área" in texto
+            or "dentro da area" in texto
+        ):
+            return (
+                "O árbitro deve marcar pênalti para a equipe adversária, "
+                "desde que a infração de mão na bola seja punível com "
+                "tiro livre direto."
+            )
+
+    if (
+        "impedimento" in texto
+        and (
+            "escanteio" in texto
+            or "cobrança de canto" in texto
+            or "cobranca de canto" in texto
+        )
+    ):
+        return (
+            "Não. Um jogador não comete infração de impedimento ao "
+            "receber a bola diretamente de uma cobrança de escanteio, "
+            "mesmo que esteja em posição de impedimento."
+        )
+
+    if (
+        "impedimento" in texto
+        and (
+            "lateral" in texto
+            or "arremesso lateral" in texto
+        )
+    ):
+        return (
+            "Não. Um jogador não comete infração de impedimento ao "
+            "receber a bola diretamente de um arremesso lateral, "
+            "mesmo que esteja em posição de impedimento."
+        )
+
+    if (
+        "impedimento" in texto
+        and (
+            "tiro de meta" in texto
+            or "tiro-de-meta" in texto
+        )
+    ):
+        return (
+            "Não. Um jogador não comete infração de impedimento ao "
+            "receber a bola diretamente de um tiro de meta, mesmo "
+            "que esteja em posição de impedimento."
+        )
+
+    if (
+        "goleiro" in texto
+        and (
+            "oito segundos" in texto
+            or "8 segundos" in texto
+        )
+    ):
+        return (
+            "Se o goleiro mantiver o controle da bola com as mãos por mais "
+            "de oito segundos dentro da própria área, o árbitro concede "
+            "um escanteio à equipe adversária."
+        )
+
+    if (
+        "goleiro" in texto
+        and (
+            "lateral" in texto
+            or "arremesso lateral" in texto
+        )
+        and (
+            "pega a bola com as mãos" in texto
+            or "pega a bola com as maos" in texto
+            or "segura a bola com as mãos" in texto
+            or "segura a bola com as maos" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "adversária. O goleiro não pode tocar com as mãos, dentro "
+            "da própria área, uma bola recebida diretamente de um "
+            "arremesso lateral cobrado por um companheiro de equipe."
+        )
+
+    if (
+        "goleiro" in texto
+        and (
+            "defensor" in texto
+            or "companheiro" in texto
+        )
+        and (
+            "deliberadamente com o pé" in texto
+            or "deliberadamente com o pe" in texto
+            or "com o pé para seu goleiro" in texto
+            or "com o pe para seu goleiro" in texto
+        )
+        and (
+            "segura com as mãos" in texto
+            or "segura com as maos" in texto
+            or "segurou com as mãos" in texto
+            or "segurou com as maos" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "adversária. Isso ocorre porque o goleiro não pode tocar "
+            "com as mãos, dentro da própria área, uma bola recebida "
+            "diretamente de um passe intencional com o pé de um "
+            "companheiro de equipe."
+        )
+
+    if (
+        "goleiro" in texto
+        and (
+            "passe intencional" in texto
+            or "passe deliberado" in texto
+        )
+        and (
+            "pegou a bola com as mãos" in texto
+            or "pegou a bola com as maos" in texto
+            or "usou as mãos" in texto
+            or "usou as maos" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "adversária. O goleiro não pode tocar com as mãos, dentro "
+            "da própria área, uma bola recebida diretamente de um "
+            "passe intencional com o pé de companheiro de equipe."
+        )
+
+    if (
+        "gol" in texto
+        and (
+            "próxima cobrança" in texto
+            or "proxima cobranca" in texto
+            or "recomeça" in texto
+            or "recomeca" in texto
+            or "recomeça o jogo" in texto
+            or "recomeca o jogo" in texto
+        )
+    ):
+        return (
+            "Após um gol válido, a partida recomeça com um tiro de "
+            "saída no círculo central, cobrado pela equipe que sofreu "
+            "o gol."
+        )
+
+    if (
+        "linha lateral" in texto
+        and (
+            "quem cobra" in texto
+            or "quem faz a cobrança" in texto
+            or "quem faz a cobranca" in texto
+            or "reposição" in texto
+            or "reposicao" in texto
+        )
+    ):
+        return (
+            "O arremesso lateral é concedido à equipe adversária "
+            "do jogador que tocou por último na bola antes de ela "
+            "ultrapassar completamente a linha lateral. A cobrança "
+            "é feita com as mãos, no ponto em que a bola saiu."
+        )
+
+    if (
+        "goleiro" in texto
+        and (
+            "espalmar" in texto
+            or "espalmou" in texto
+            or "espalmada" in texto
+        )
+        and (
+            "para fora" in texto
+            or "fora" in texto
+        )
+    ):
+        return CONHECIMENTO_FUTEBOL["escanteio"]
+
+    if (
         "linha de fundo" in texto
         and "goleiro" in texto
         and (
@@ -1299,8 +1575,6 @@ def identificar_tipo_jogo(pergunta):
         or "enfrenta" in texto
         or "próximo adversário" in texto
         or "proximo adversario" in texto
-        or (("adversário" in texto or "adversario" in texto)
-            and "último" not in texto and "ultimo" not in texto)
         or "quando o " in texto and " joga" in texto
     ):
         return "proximo"
@@ -1495,7 +1769,7 @@ def conversar(pergunta: Pergunta):
         }
 
     tipo_jogo = identificar_tipo_jogo(pergunta.pergunta)
-
+    
     texto = pergunta.pergunta.lower()
 
     if tipo_jogo == "proximo":
