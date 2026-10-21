@@ -437,6 +437,226 @@ def buscar_conhecimento(pergunta):
 
     if (
         ("pênalti" in texto or "penalti" in texto)
+        and ("goleiro" in texto)
+        and ("se adianta" in texto or "adianta" in texto)
+        and ("defende" in texto or "defendeu" in texto)
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança se o goleiro se "
+            "adiantou antes do chute e essa infração afetou o resultado "
+            "da cobrança, impedindo o gol. O cartão amarelo pode ser "
+            "aplicado se a infração for repetida ou houver outra razão "
+            "disciplinar aplicável."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("cobrador" in texto or "jogador que bate" in texto)
+        and ("invade" in texto or "invasão" in texto or "invasao" in texto)
+        and ("marca o gol" in texto or "marcou o gol" in texto or "marca gol" in texto)
+    ):
+        return (
+            "O árbitro deve anular o gol e marcar tiro livre indireto "
+            "para a equipe defensora, pois o cobrador cometeu uma infração "
+            "ao invadir a área antes da cobrança."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("invade" in texto or "invasão" in texto or "invasao" in texto)
+        and ("goleiro defende" in texto or "defende a cobrança" in texto
+             or "defende a cobranca" in texto)
+        and ("defensor" in texto or "equipe defensora" in texto
+             or "jogador da equipe defensora" in texto)
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança se a invasão do "
+            "defensor tiver influenciado o lance, como ao disputar a bola "
+            "que sobrou após a defesa do goleiro. Se a invasão não tiver "
+            "influenciado o lance, o jogo pode continuar"
+        )
+
+    if (
+        ("vantagem" in texto or "parar o jogo" in texto)
+        and ("pênalti" in texto or "penalti" in texto)
+        and ("atacante" in texto or "bola sobra" in texto)
+    ):
+        return (
+            "O árbitro não precisa interromper o jogo imediatamente. "
+            "Pode aplicar a vantagem se a continuidade da jogada beneficiar "
+            "a equipe atacante. Se a vantagem esperada não se concretizar, "
+            "o árbitro poderá voltar à infração e marcar o pênalti, conforme "
+            "as circunstâncias e as regras aplicáveis."
+        )
+
+    if (
+        ("zagueiro" in texto or "defensor" in texto)
+        and ("empurra" in texto or "empurrar" in texto or "empurrão" in texto
+             or "empurrao" in texto)
+        and "atacante" in texto
+        and ("área" in texto or "area" in texto)
+        and (
+            "não tinha uma clara oportunidade de gol" in texto
+            or "nao tinha uma clara oportunidade de gol" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar pênalti, pois o zagueiro cometeu uma "
+            "infração punível com tiro livre direto dentro da própria área "
+            "de pênalti. O cartão depende das circunstâncias e não é "
+            "automaticamente vermelho."
+        )
+
+    if (
+        ("zagueiro" in texto or "defensor" in texto)
+        and (
+            "segura" in texto
+            or "segurando" in texto
+            or "agarrando" in texto
+            or "puxa pela camisa" in texto
+        )
+        and ("camisa" in texto or "atacante" in texto)
+        and ("área" in texto or "area" in texto)
+        and (
+            "clara oportunidade" in texto
+            or "impedindo" in texto
+            or "impedir" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar pênalti e expulsar o zagueiro com "
+            "cartão vermelho por impedir uma clara oportunidade de gol, "
+            "desde que os critérios para essa punição sejam atendidos."
+        )
+
+    if (
+        ("zagueiro" in texto or "defensor" in texto)
+        and ("derruba" in texto or "derrubar" in texto or "falta" in texto)
+        and ("cara a cara" in texto or "clara oportunidade" in texto)
+        and ("fora da área" in texto or "fora da propria area" in texto
+             or "fora da própria área" in texto)
+    ):
+        return (
+            "O árbitro deve marcar tiro livre direto e expulsar o zagueiro "
+            "com cartão vermelho por impedir uma clara oportunidade de gol, "
+            "desde que os critérios para essa punição sejam atendidos."
+        )
+
+    if (
+        ("zagueiro" in texto or "defensor" in texto)
+        and ("mão" in texto or "mao" in texto)
+        and ("deliberadamente" in texto or "deliberada" in texto)
+        and ("área" in texto or "area" in texto)
+        and (
+            "não estava indo em direção ao gol" in texto
+            or "nao estava indo em direção ao gol" in texto
+            or "não estava indo em direcao ao gol" in texto
+            or "nao estava indo em direcao ao gol" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar pênalti, pois o zagueiro tocou "
+            "deliberadamente a bola com a mão dentro da própria área "
+            "de pênalti. O cartão depende das circunstâncias da infração; "
+            "não é automaticamente vermelho."
+        )
+
+    if (
+        ("zagueiro" in texto or "defensor" in texto)
+        and ("mão" in texto or "mao" in texto)
+        and ("gol" in texto)
+        and ("área" in texto or "area" in texto)
+        and (
+            "impede" in texto 
+            or "impedir" in texto 
+            or "impede que a bola entre" in texto
+        )
+    ):
+        return (
+            "O árbitro deve marcar pênalti e expulsar o zagueiro com "
+            "cartão vermelho por impedir um gol com mão deliberada, "
+            "desde que a infração tenha impedido um gol de forma clara."
+        )
+
+    if (
+        "goleiro" in texto
+        and ("chute" in texto or "chuta" in texto)
+        and ("companheiro" in texto or "próprio gol" in texto or "proprio gol" in texto)
+        and ("mãos" in texto or "maos" in texto or "defende" in texto)
+    ):
+        return (
+            "Nenhuma infração deve ser marcada. O goleiro pode usar as mãos "
+            "dentro da própria área de pênalti para defender um chute de "
+            "um companheiro, desde que não se trate de uma situação proibida "
+            "pelas regras."
+        )
+
+    if (
+        ("simulação" in texto or "simulacao" in texto or "se joga" in texto)
+        and ("árbitro" in texto or "arbitro" in texto)
+        and (
+            "pênalti" in texto or "penalti" in texto
+            or "área" in texto or "area" in texto
+        )
+    ):
+        return (
+            "O árbitro deve advertir o atacante com cartão amarelo por "
+            "simulação e marcar tiro livre indireto para a equipe "
+            "adversária no local da infração."
+        )
+
+    if (
+        "goleiro" in texto
+        and ("cabeça" in texto or "cabeca" in texto)
+        and ("defensor" in texto or "companheiro" in texto)
+        and ("mãos" in texto or "maos" in texto or "pega" in texto)
+    ):
+        if (
+            "truque" in texto
+            or "contornar a regra" in texto
+            or "levantar a bola com o pé" in texto
+            or "levantar a bola com o pe" in texto
+        ):
+            return (
+                "O árbitro deve marcar tiro livre indireto para a equipe "
+                "adversária. O jogador que usar deliberadamente um truque "
+                "para contornar a regra do recuo deve receber cartão amarelo."
+            )
+
+        return (
+            "O árbitro deve permitir que o jogo continue. Um passe legítimo "
+            "com a cabeça para o próprio goleiro não impede que ele pegue "
+            "a bola com as mãos dentro da área de pênalti."
+        )
+
+    if (
+        "goleiro" in texto
+        and ("defensor" in texto or "companheiro" in texto)
+        and ("deliberadamente" in texto or "deliberado" in texto)
+        and ("pé" in texto or "pe" in texto)
+        and ("mãos" in texto or "maos" in texto)
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "adversária, pois o goleiro não pode tocar com as mãos "
+            "dentro da própria área uma bola recebida diretamente "
+            "de um passe deliberado com o pé de um companheiro."
+        )
+
+    if (
+        ("falta" in texto or "tiro livre" in texto)
+        and ("novamente" in texto or "segundo toque" in texto or "dois toques" in texto)
+        and ("antes que qualquer outro jogador" in texto or "outro jogador" in texto)
+    ):
+        return (
+            "O árbitro deve marcar tiro livre indireto para a equipe "
+            "adversária no local do segundo toque, pois o cobrador "
+            "não pode tocar na bola novamente antes que outro jogador "
+            "a toque, desde que não tenha ocorrido uma infração mais grave."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
         and "goleiro" in texto
         and ("espalma" in texto or "defende" in texto)
         and ("novamente" in texto or "segunda vez" in texto)
@@ -627,12 +847,16 @@ def buscar_conhecimento(pergunta):
             or "deliberadamente com o pe" in texto
             or "com o pé para seu goleiro" in texto
             or "com o pe para seu goleiro" in texto
+            or "passa deliberadamente a bola com o pé" in texto
+            or "passa deliberadamente a bola com o pe" in texto
         )
         and (
             "segura com as mãos" in texto
             or "segura com as maos" in texto
             or "segurou com as mãos" in texto
             or "segurou com as maos" in texto
+            or "pega com as mãos" in texto
+            or "pega com as maos" in texto
         )
     ):
         return (
