@@ -437,6 +437,208 @@ def buscar_conhecimento(pergunta):
 
     if (
         ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("não interfere" in texto or "nao interfere" in texto)
+        and ("não participa" in texto or "nao participa" in texto
+             or "nem participa" in texto)
+        and ("para fora" in texto or "chuta para fora" in texto
+             or "erra o gol" in texto)
+    ):
+        return (
+            "O árbitro deve conceder tiro de meta à equipe defensora, "
+            "desde que a invasão do companheiro não tenha afetado o "
+            "cobrador nem interferido na jogada. A cobrança não deve "
+            "ser repetida apenas pela invasão sem influência no lance."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("não interfere" in texto or "nao interfere" in texto)
+        and (
+            "não participa" in texto
+            or "nao participa" in texto
+            or "nem participa" in texto
+        )
+        and ("gol" in texto or "entra diretamente" in texto)
+    ):
+        return (
+            "O árbitro deve validar o gol, desde que a invasão não tenha "
+            "afetado o goleiro nem interferido na jogada. Pela Regra 14 "
+            "da IFAB, a invasão de um companheiro do cobrador não exige "
+            "repetição automaticamente quando não afeta o goleiro."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("atrapalha" in texto or "atrapalhou" in texto
+             or "interfere" in texto or "interferiu" in texto)
+        and "goleiro" in texto
+        and ("gol" in texto or "sofrendo o gol" in texto)
+        and "não interfere" not in texto
+        and "nao interfere" not in texto
+        and "não participa" not in texto
+        and "nao participa" not in texto
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança, pois o companheiro "
+            "do cobrador invadiu a área e afetou claramente o goleiro. "
+            "Como a bola entrou no gol, a repetição é a decisão correta "
+            "conforme a Regra 14 da IFAB."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("não participa" in texto or "nao participa" in texto)
+        and ("goleiro defende" in texto or "defende a cobrança" in texto
+             or "defende a cobranca" in texto)
+        and ("defensor afasta" in texto or "afasta a bola" in texto)
+    ):
+        return (
+            "O árbitro deve deixar o jogo continuar, desde que a invasão "
+            "não tenha afetado claramente o goleiro nem interferido no "
+            "lance. Como o companheiro do cobrador não participou da "
+            "jogada e um defensor afastou a bola, não há motivo para "
+            "repetir a cobrança apenas pela invasão."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("duas vezes" in texto or "segunda vez" in texto
+             or "duas vezes seguidas" in texto)
+        and ("outro jogador" in texto or "ninguém" in texto
+             or "ninguem" in texto)
+        and ("gol" in texto or "entra" in texto)
+    ):
+        return (
+            "O árbitro deve anular o gol e conceder um tiro livre "
+            "indireto à equipe defensora, pois o cobrador tocou na "
+            "bola uma segunda vez antes que outro jogador a tocasse."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("se adianta" in texto or "adianta" in texto
+             or "adiantou" in texto)
+        and ("para fora" in texto or "fora do gol" in texto)
+    ):
+        return (
+            "Se o goleiro se adiantar antes da cobrança e o cobrador "
+            "chutar para fora, o árbitro deve mandar repetir o pênalti "
+            "somente se o adiantamento tiver afetado claramente o "
+            "cobrador. Caso contrário, mantém-se o tiro de meta."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("defensor" in texto or "equipe defensora" in texto
+             or "jogador da equipe defensora" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("para fora" in texto or "fora do gol" in texto)
+    ):
+        return (
+            "O árbitro deve mandar repetir o pênalti se a invasão do "
+            "jogador da equipe defensora tiver influenciado o cobrador "
+            "ou afetado o lance. Se a invasão não tiver influenciado "
+            "a cobrança, o jogo pode continuar."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("goleiro defende" in texto or "defende a cobrança" in texto
+             or "defende a cobranca" in texto or "defesa do goleiro" in texto)
+        and ("marca o gol" in texto or "marcou o gol" in texto
+             or "marca" in texto)
+    ):
+        return (
+            "O árbitro deve anular o gol e conceder um tiro livre "
+            "indireto à equipe defensora, pois o companheiro do cobrador "
+            "invadiu a área e obteve vantagem ao participar da jogada "
+            "após a defesa do goleiro."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("invade" in texto or "invadiu" in texto
+             or "invasão" in texto or "invasao" in texto)
+        and ("área" in texto or "area" in texto)
+        and ("bola entra" in texto or "gol" in texto)
+        and "goleiro defende" not in texto
+        and "defesa do goleiro" not in texto
+        and "defensor afasta" not in texto
+        and "afasta a bola" not in texto
+        and "não participa" not in texto
+        and "nao participa" not in texto
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança, pois um "
+            "companheiro do cobrador invadiu a área antes do chute "
+            "e a bola entrou no gol."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("para trás" in texto or "para tras" in texto)
+        and ("chuta" in texto or "chutar" in texto or "chutou" in texto)
+    ):
+        return (
+            "A bola deve ser chutada para a frente durante a cobrança "
+            "de pênalti. Se o cobrador chutar a bola para trás, o árbitro "
+            "deve interromper a cobrança e conceder um tiro livre "
+            "indireto à equipe defensora."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("finta" in texto or "fingir" in texto or "simula" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and (
+            "corrida" in texto
+            or "chutar" in texto
+            or "chute" in texto
+        )
+    ):
+        return (
+            "Se o cobrador fizer uma finta ilegal após concluir a corrida "
+            "para a bola, o árbitro deve adverti-lo com cartão amarelo e "
+            "marcar tiro livre indireto para a equipe defensora, "
+            "independentemente de a bola entrar no gol."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("se adianta" in texto or "adianta" in texto
+             or "adiantou" in texto)
+        and ("trave" in texto or "bate na trave" in texto)
+        and ("entra no gol" in texto or "bola entra" in texto
+             or "gol" in texto)
+    ):
+        return (
+            "O árbitro deve validar o gol. Se o goleiro se adiantar "
+            "antes da cobrança, mas a bola entrar no gol, o pênalti "
+            "não deve ser repetido apenas por causa do adiantamento."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
         and ("goleiro" in texto)
         and ("se adianta" in texto or "adianta" in texto)
         and ("defende" in texto or "defendeu" in texto)
