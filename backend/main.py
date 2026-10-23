@@ -8,6 +8,8 @@ from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
+from backend.knowledge.external_research import (pesquisar_na_web, formatar_resultados_pesquisa)
 import requests
 
 app = FastAPI()
@@ -434,6 +436,239 @@ def comparar_conceitos_futebol(pergunta):
 def buscar_conhecimento(pergunta):
 
     texto = pergunta.lower()
+
+    if (
+        ("pelé" in texto or "pele" in texto or "rei do futebol" in texto)
+        and ("gol" in texto or "gols" in texto)
+        and any(
+            termo in texto
+            for termo in ["quantos", "quantas", "oficial", "carreira", "marcou",
+                          "total", "números diferentes", "numero diferente", "por que",
+                          "porque"]
+        )
+    ):
+        return None
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("defende a bola" in texto or "defendeu a bola" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("toca novamente" in texto or "tocou novamente" in texto)
+        and ("erra o gol" in texto or "erra a cobrança" in texto
+             or "bola sai pela linha de fundo" in texto
+             or "sai pela linha de fundo" in texto)
+    ):
+        return (
+            "O árbitro deve conceder tiro de meta à equipe defensora, "
+            "pois o goleiro tocou na bola ao defender o pênalti, permitindo "
+            "o segundo toque do cobrador. Como a bola saiu pela linha de "
+            "fundo sem entrar no gol, o jogo recomeça com tiro de meta."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("defende a bola" in texto or "defendeu a bola" in texto)
+        and "rebote" in texto
+        and ("companheiro" in texto or "colega" in texto)
+        and ("marca o gol" in texto or "marca o gol no rebote" in texto
+             or "marcou o gol" in texto or "marca o gol no rebote" in texto)
+    ):
+        return (
+            "O árbitro deve validar o gol, desde que não haja outra "
+            "infração. Como o goleiro tocou na bola ao defender o pênalti, "
+            "o companheiro do cobrador pode aproveitar o rebote e marcar."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("defende a bola" in texto or "defendeu a bola" in texto
+             or "defesa do goleiro" in texto)
+        and "rebote" in texto
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("marca o gol" in texto or "marca o gol" in texto
+             or "marca o gol" in texto or "faz o gol" in texto)
+        and ("antes que qualquer outro jogador" in texto
+             or "antes de qualquer outro jogador" in texto)
+    ):
+        return (
+            "O árbitro deve validar o gol, desde que não haja outra "
+            "infração. Como o goleiro tocou na bola ao defender o "
+            "pênalti, o cobrador pode tocar nela novamente e marcar "
+            "no rebote."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("companheiro" in texto or "colega" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and "trave" in texto
+        and ("toca na bola" in texto or "tocou na bola" in texto)
+        and ("antes que qualquer defensor" in texto
+             or "antes de qualquer defensor" in texto)
+    ):
+        return (
+            "O árbitro deve deixar o jogo continuar, pois o companheiro "
+            "do cobrador pode tocar na bola após o rebote na trave. "
+            "A infração de dois toques só ocorre se o próprio cobrador "
+            "tocar novamente na bola antes que outro jogador a toque."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("permanece sobre a linha" in texto
+             or "permanece na linha" in texto
+             or "ficou sobre a linha" in texto)
+        and "trave" in texto
+        and ("defensor afasta" in texto
+             or "defensor afastou" in texto
+             or "afasta a bola" in texto)
+    ):
+        return (
+            "O árbitro deve deixar o jogo continuar. O goleiro permaneceu "
+            "sobre a linha durante a cobrança, a bola bateu na trave e "
+            "um defensor afastou o rebote antes que um atacante a tocasse. "
+            "Como não houve infração, não há motivo para repetir o pênalti."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("permanece sobre a linha" in texto
+             or "permanece na linha" in texto
+             or "ficou sobre a linha" in texto)
+        and "trave" in texto
+        and ("rebote" in texto or "volta para o campo" in texto)
+        and ("atacante" in texto or "jogador" in texto)
+        and ("marca no rebote" in texto or "marca no rebote" in texto
+             or "marca o gol" in texto or "faz o gol" in texto)
+    ):
+        return (
+            "O árbitro deve validar o gol, desde que não tenha ocorrido "
+            "outra infração. O goleiro permaneceu sobre a linha durante "
+            "a cobrança, e o atacante marcou aproveitando o rebote da trave."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("se adianta" in texto or "adianta da linha" in texto
+             or "adiantou" in texto)
+        and "trave" in texto
+        and ("defensor afasta" in texto or "defensor afastou" in texto
+             or "afasta a bola" in texto)
+    ):
+        return (
+            "O árbitro deve avaliar se o adiantamento do goleiro afetou "
+            "claramente o cobrador. Se afetou, a cobrança deve ser repetida; "
+            "caso contrário, o jogo continua. Como o defensor afastou o "
+            "rebote, não há gol a validar."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("se adianta" in texto or "adianta da linha" in texto
+             or "adiantou" in texto)
+        and "trave" in texto
+        and ("rebote" in texto or "volta para o campo" in texto)
+        and ("atacante" in texto or "jogador" in texto)
+        and ("marca o gol" in texto or "faz o gol" in texto
+             or "marcou o gol" in texto)
+    ):
+        return (
+            "O árbitro deve avaliar se o adiantamento do goleiro afetou "
+            "claramente o cobrador. Se afetou, a cobrança deve ser repetida. "
+            "Se não afetou, o gol marcado no rebote pode ser validado, desde "
+            "que o atacante não tenha cometido outra infração."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and "goleiro" in texto
+        and ("se adianta" in texto or "adianta da linha" in texto
+             or "adiantou" in texto)
+        and "trave" in texto
+        and ("volta para o campo" in texto
+             or "volta ao campo" in texto)
+        and ("sem entrar no gol" in texto
+             or "não entrar no gol" in texto
+             or "nao entrar no gol" in texto)
+    ):
+        return (
+            "O árbitro deve avaliar se o adiantamento do goleiro afetou "
+            "claramente o cobrador. Se afetou, a cobrança deve ser repetida; "
+            "caso contrário, o jogo continua. O simples fato de a bola "
+            "bater na trave não determina, por si só, a repetição."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("escorrega" in texto or "escorregou" in texto)
+        and ("dois pés" in texto or "dois pes" in texto
+             or "ambos os pés" in texto or "ambos os pes" in texto)
+        and ("para fora" in texto or "não entra no gol" in texto
+             or "nao entra no gol" in texto)
+    ):
+        return (
+            "O árbitro deve conceder um tiro livre indireto à equipe "
+            "defensora. Quando o cobrador toca acidentalmente na bola "
+            "com os dois pés ao mesmo tempo e ela não entra no gol, "
+            "a cobrança não deve ser repetida, conforme a Regra 14 da IFAB."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("escorrega" in texto or "escorregou" in texto)
+        and ("dois pés" in texto or "dois pes" in texto
+             or "ambos os pés" in texto or "ambos os pes" in texto)
+        and ("gol" in texto or "entra" in texto)
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança. Quando o cobrador "
+            "toca acidentalmente na bola com os dois pés ao mesmo tempo "
+            "e ela entra diretamente no gol, a cobrança deve ser repetida, "
+            "conforme a Regra 14 da IFAB."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("cobrador" in texto or "jogador" in texto)
+        and ("trave" in texto)
+        and ("segundo toque" in texto or "duas vezes" in texto
+             or "novamente" in texto)
+        and ("antes que qualquer outro jogador" in texto
+             or "antes de outro jogador" in texto)
+        and ("gol" in texto or "marcar" in texto)
+    ):
+        return (
+            "O gol deve ser anulado e concedido tiro livre indireto "
+            "à equipe defensora, pois o cobrador tocou na bola pela "
+            "segunda vez antes que qualquer outro jogador a tocasse. "
+            "O fato de a bola ter batido na trave não permite um "
+            "segundo toque imediato do cobrador."
+        )
+
+    if (
+        ("pênalti" in texto or "penalti" in texto)
+        and ("defensor" in texto or "equipe defensora" in texto
+             or "adversário" in texto or "adversario" in texto)
+        and ("grita" in texto or "gritou" in texto
+             or "distrair" in texto or "distrai" in texto)
+        and ("perde" in texto or "perdeu" in texto
+             or "para fora" in texto)
+    ):
+        return (
+            "O árbitro deve mandar repetir a cobrança e advertir com "
+            "cartão amarelo o jogador defensor por conduta antidesportiva, "
+            "pois ele distraiu deliberadamente o cobrador durante a execução "
+            "do pênalti."
+        )
 
     if (
         ("pênalti" in texto or "penalti" in texto)
@@ -1654,6 +1889,41 @@ def gerar_resposta_ollama(pergunta, dados):
                 - Se realmente não souber uma informação, seja transparente.
                 - Responda sempre em português do Brasil.
                 - Seja amigável e objetivo.
+                - Não inclua na resposta final mensagens internas de classificação,
+                diagnóstico ou processamento do sistema.
+                - Não escreva "Conceito identificado pelo sistema" na resposta ao usuário.
+                - Apresente diretamente a resposta à pergunta, sem reproduzir os metadados recebidos.
+                - Em perguntas sobre estatísticas históricas, diferencie os critérios
+                de contagem apresentados pelas fontes.
+                - Não apresente números com critérios diferentes como se fossem equivalentes.
+                - Se as fontes divergirem, explique brevemente o motivo da divergência.
+                - Não afirme que um total inclui determinadas competições ou partidas
+                se isso não estiver explicitamente confirmado pelos dados fornecidos.
+                - Para perguntas sobre gols na carreira, informe a qual critério cada
+                total corresponde, quando essa informação estiver disponível.
+                - Para perguntas que dependam de pesquisa externa, utilize somente
+                informações que estejam explicitamente presentes nos dados fornecidos.
+                - Associe cada número à entidade e ao critério de contagem corretos.
+                - Nunca atribua ao Santos números que pertencem à CBF ou à FIFA.
+                - Não invente explicações para divergências entre fontes.
+                - Se os resultados forem contraditórios ou insuficientes, informe
+                que não foi possível determinar com segurança o número correto.
+                - Não tente preencher lacunas usando suposições ou conhecimento próprio.
+                - Não repita informações contraditórias como se fossem fatos confirmados.
+                - Seja conciso: priorize a explicação da divergência e os números
+                que as fontes efetivamente sustentam.
+                - Antes de responder uma pergunta estatística, identifique exatamente
+                o que está sendo contado: gols pela seleção, por um clube ou na carreira.
+                - Não compare números referentes a categorias diferentes.
+                - Não atribua um número a uma entidade apenas porque ele aparece
+                no mesmo resultado de pesquisa.
+                - Para cada estatística, verifique no texto da fonte a qual categoria
+                ela se refere.
+                - Se não for possível determinar o critério de um número, não o apresente
+                como um fato confirmado.
+                - Evite listas de números sem explicação.
+                - Responda diretamente à pergunta e explique a divergência apenas
+                quando houver evidência suficiente nos resultados.
                 """
             },
             {
@@ -1662,12 +1932,14 @@ def gerar_resposta_ollama(pergunta, dados):
                 Pergunta do usuário: {pergunta}
 
                 Conceito identificado pelo sistema: {
-                    dados.get("conceito") if isinstance(dados, dict) else "nenhum conceito específico"
-                    }
+                    dados.get("conceito") or "Não se aplica"
+                    if isinstance(dados, dict)
+                    else "Não se aplica"
+                }
 
                 Dados fornecidos: {
                     dados.get("dados") if isinstance(dados, dict) else dados
-                    }
+                }
 
                 Responda à pergunta utilizando os dados fornecidos.
 
@@ -1679,7 +1951,20 @@ def gerar_resposta_ollama(pergunta, dados):
         ]
     )
 
-    return resposta["message"]["content"]
+    texto_resposta = resposta["message"]["content"].strip()
+
+    prefixos_internos = [
+        "O conceito identificado pelo sistema não foi aplicável à pergunta.",
+        "Conceito identificado pelo sistema:",
+        "O conceito identificado pelo sistema",
+    ]
+
+    for prefixo in prefixos_internos:
+        if texto_resposta.lower().startswith(prefixo.lower()):
+            texto_resposta = texto_resposta[len(prefixo):].strip()
+            texto_resposta = texto_resposta.lstrip(" .:\n")
+
+    return texto_resposta
 
 def pergunta_e_de_futebol(pergunta):
     texto = pergunta.lower()
@@ -1757,6 +2042,10 @@ def pergunta_e_de_futebol(pergunta):
         "pelé",
         "pele",
         "rei do futebol",
+        "bola de ouro",
+        "bolas de ouro",
+        "ballon d'or",
+        "ballon dor",
         "champions",
         "libertadores",
         "copa do mundo",
@@ -2109,7 +2398,7 @@ def gerar_resposta_tatica(dados):
     return resposta
 
 @app.post("/api/chat")
-def conversar(pergunta: Pergunta):
+async def conversar(pergunta: Pergunta):
     texto_pergunta = pergunta.pergunta.lower()
 
     termos_comparacao = [
@@ -2635,6 +2924,37 @@ def conversar(pergunta: Pergunta):
 
         return {
             "response": conhecimento.strip()
+        }
+
+    conhecimento_historico = buscar_conhecimento_historico(
+        pergunta.pergunta
+    )
+
+    if conhecimento_historico is not None:
+        return {
+            "response": conhecimento_historico["resposta"]
+        }
+
+    resultados_pesquisa = await pesquisar_na_web(pergunta.pergunta)
+
+    if resultados_pesquisa:
+        contexto_web = formatar_resultados_pesquisa(
+            resultados_pesquisa
+        )
+        
+        resposta = gerar_resposta_ollama(
+            pergunta.pergunta,
+            contexto_web
+        )
+
+        fontes = "\n\nFontes consultadas:\n" + "\n".join(
+            f"- {item['titulo']}: {item['url']}"
+            for item in resultados_pesquisa
+            if item.get("url")
+        )
+
+        return {
+            "response": resposta + fontes
         }
 
     time = identificar_time(pergunta.pergunta)
