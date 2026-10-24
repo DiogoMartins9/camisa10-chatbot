@@ -1875,6 +1875,19 @@ Informe o que está sendo contado, a entidade responsável
 pela contagem e o critério correspondente, quando disponíveis.
 Se houver contagens diferentes relevantes, explique a diferença
 brevemente.
+REGRAS OBRIGATÓRIAS PARA COMPARAÇÕES:
+
+- Os jogadores citados na pergunta original são fixos.
+- Não substitua nenhum jogador por outro, mesmo que o outro seja
+  mais conhecido ou apareça com mais frequência nos dados.
+- Antes de responder, confira se cada jogador citado na pergunta
+  foi tratado individualmente.
+- Use somente números que possam ser associados a uma fonte
+  presente no contexto fornecido.
+- Se não houver dados suficientes para um jogador, informe
+  explicitamente que o dado não foi encontrado.
+- Não invente estatísticas adicionais de ligas, seleções ou títulos
+  que não sejam necessárias para responder à pergunta.
 """
 
     else:
@@ -1908,13 +1921,32 @@ A pergunta pede a quantidade de gols de um jogador.
 - Não transforme a pergunta em uma comparação entre jogadores.
 """,
     "comparacao": """
-A pergunta compara os gols de dois ou mais jogadores.
+A pergunta compara estatísticas de dois ou mais jogadores.
 
-- Identifique todos os jogadores mencionados.
-- Compare números da mesma categoria e do mesmo critério.
-- Informe as fontes e o período dos números, quando disponíveis.
-- Se os dados não forem comparáveis, explique a limitação.
-- Não declare um vencedor sem evidências suficientes.
+Siga estas etapas:
+1. Identifique os jogadores solicitados na pergunta original.
+2. Analise separadamente os dados encontrados para cada jogador.
+3. Extraia somente números que as fontes realmente sustentem.
+4. Verifique se cada número representa gols oficiais na carreira
+   inteira ou uma categoria diferente.
+5. Verifique se os números abrangem períodos comparáveis.
+6. Não confunda uma marca individual, como 900 gols, com uma
+   comparação entre os jogadores.
+7. Não use gols por um único clube como total da carreira.
+8. Não invente o total ausente de nenhum jogador.
+9. Não presuma que um número está atualizado na data da consulta.
+10. Se os critérios forem comparáveis, apresente os dois totais,
+    as fontes e as datas disponíveis e depois responda quem marcou mais.
+11. Se não houver dados suficientes para um ou ambos os jogadores,
+    explique especificamente qual informação está faltando.
+
+Formato obrigatório:
+Pelé: número confirmado ou "não foi possível confirmar".
+Messi: número confirmado ou "não foi possível confirmar".
+Conclusão: comparação sustentada pelas fontes ou limitação encontrada.
+
+Não responda somente com um número isolado.
+Não declare um vencedor sem evidências suficientes.
 """,
     "divergencia": """
 A pergunta procura explicar números estatísticos divergentes.
@@ -1953,10 +1985,13 @@ Conceito identificado pelo sistema:
 Dados e contexto disponíveis:
 {contexto}
 
-Instrução final:
-Responda à pergunta acima usando as informações disponíveis.
-Não confunda o texto das fontes com a pergunta do usuário.
-Não invente informações que não estejam sustentadas pelos dados.
+Instruções finais:
+- Responda à pergunta original, não apenas ao número mais destacado.
+- Em comparações, avalie separadamente cada jogador.
+- Use somente números sustentados pelas fontes fornecidas.
+- Não invente informações ausentes.
+- Se não for possível comparar os dois jogadores, explique por quê.
+- Escreva a resposta completa em português brasileiro.
 """
             }
         ],
@@ -3046,17 +3081,56 @@ async def conversar(pergunta: Pergunta):
         - Se os dados não permitirem identificar um total confiável,
           explique essa limitação.
         """,
+            
             "comparacao": """
-    A pergunta solicita uma comparação de gols entre jogadores.
-    Identifique os jogadores e apresente os números encontrados
-    para cada um, com as fontes e datas de referência disponíveis.
-    Use o mesmo critério para ambos, como gols em partidas oficiais.
-    Não compare números de períodos diferentes como se fossem atuais.
-    Se os dados não forem suficientes para uma comparação confiável,
-    explique exatamente qual informação está faltando.
-    Não diga que a comparação é impossível apenas porque existem
-    critérios de contagem diferentes.
-    """,
+        A pergunta solicita comparar a quantidade de gols oficiais na carreira
+        dos jogadores mencionados.
+
+        Siga obrigatoriamente estas etapas:
+
+        1. Identifique todos os jogadores mencionados na pergunta original.
+        2. Examine separadamente as fontes de cada jogador nos dados da pesquisa.
+        3. Para cada jogador, procure um total explícito de gols oficiais
+           na carreira e identifique o período a que esse total se refere.
+        4. Verifique se os totais incluem clubes e seleção principal e se
+           usam critérios de contagem equivalentes.
+        5. Não confunda o total de gols de um jogador com uma marca isolada,
+           como 700, 900 ou 1.000 gols, sem confirmar o que ela representa.
+        6. Não use números de gols por um único clube como total da carreira.
+        7. Não considere a data da consulta como prova de que um número
+           foi atualizado nessa data.
+        8. Não invente valores nem deduza totais que não estejam sustentados
+           pelas fontes.
+        9. Se houver dados comparáveis, apresente os dois números,
+           as fontes e as respectivas datas disponíveis. Só então responda
+           quem marcou mais.
+        10. Se houver dados confiáveis para apenas um jogador, informe
+            o número encontrado para ele e explique qual dado falta
+            para concluir a comparação.
+
+        Formato da resposta:
+        - Pelé: total encontrado, critério, data e fonte, se disponíveis.
+        - Messi: total encontrado, critério, data e fonte, se disponíveis.
+        - Conclusão: comparação direta ou explicação objetiva da limitação.
+
+        Não responda apenas com um número isolado.
+        Não declare a comparação impossível somente porque existem
+        critérios históricos diferentes.
+        RESTRIÇÕES DE ESCOPO:
+
+        - Compare exclusivamente os jogadores citados na pergunta original.
+        - Não mencione outros jogadores, nem mesmo como exemplos ou contexto.
+        - Não acrescente estatísticas de clubes, seleções, títulos ou competições
+          que não sejam necessárias para responder à pergunta.
+        - A resposta deve conter no máximo três partes:
+          1. O total encontrado para cada jogador solicitado.
+          2. A fonte que sustenta cada total e o critério de contagem.
+          3. Uma conclusão direta, somente se os dados forem comparáveis.
+        - Se não houver evidência suficiente para um dos totais, informe
+          essa limitação em vez de preencher a lacuna com outro jogador
+          ou com números não confirmados.
+        """,
+
             "divergencia": """
     A pergunta solicita uma explicação sobre diferenças estatísticas.
     Apresente os números e atribua cada um à respectiva fonte.
@@ -3081,13 +3155,48 @@ async def conversar(pergunta: Pergunta):
     {contexto_web}
     """
 
+        print("\n=== CONTEXTO ENVIADO AO OLLAMA ===")
+        print(contexto_web)
+        print("=== FIM DO CONTEXTO ===\n")
+
         resposta = gerar_resposta_ollama(
             pergunta.pergunta,
             contexto_web
         )
 
+        print("\n=== RESPOSTA ORIGINAL DO OLLAMA ===")
+        print(resposta)
+        print("=== FIM DA RESPOSTA ORIGINAL ===\n")
+   
+    if intencao_estatistica == "comparacao":
+        jogadores_esperados = []
+
+        pergunta_normalizada = pergunta.pergunta.lower()
+
+        if "pelé" in pergunta_normalizada or "pele" in pergunta_normalizada:
+            jogadores_esperados.append("Pelé")
+
+        if "messi" in pergunta_normalizada:
+            jogadores_esperados.append("Messi")
+
+        resposta_normalizada = resposta.lower()
+
+        menciona_todos = all(
+            jogador.lower() in resposta_normalizada
+            for jogador in jogadores_esperados
+        )
+
+        if not menciona_todos:
+            resposta = (
+                "Não foi possível concluir a comparação com segurança. "
+                "A resposta gerada não apresentou todos os jogadores "
+                "solicitados. Consulte as fontes para verificar os totais "
+                "e os critérios de contagem."
+            )
+
         fontes = "\n\nFontes consultadas:\n" + "\n".join(
-            f"- {item['titulo']}: {item['url']}"
+            f"- [{item.get('jogador_pesquisado') or 'Geral'}]"
+            f"{item['titulo']}: {item['url']}"
             for item in resultados_pesquisa
             if item.get("url")
         )
