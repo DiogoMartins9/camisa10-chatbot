@@ -9,8 +9,9 @@ import unicodedata
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
-from backend.knowledge.external_research import (pesquisar_na_web, formatar_resultados_pesquisa)
+from backend.knowledge.external_research import (pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica)
 import requests
+import re
 
 app = FastAPI()
 
@@ -1828,141 +1829,143 @@ def buscar_conhecimento_tatico(pergunta):
     return None
 
 
+
 def gerar_resposta_ollama(pergunta, dados):
+
+    intencao_estatistica = identificar_intencao_estatistica(pergunta)
+    pergunta_estatistica = intencao_estatistica is not None
+
+    # Aceita tanto o contexto em texto quanto o dicionário.
+    if isinstance(dados, dict):
+        contexto = dados.get("dados", dados)
+        conceito = dados.get("conceito") or "Não se aplica"
+    else:
+        contexto = dados
+        conceito = "Não se aplica"
+
+    contexto = str(contexto)
+
+    if pergunta_estatistica:
+        prompt_sistema = """
+Você é o assistente virtual do Camisa10, especializado em futebol.
+
+Responda em português do Brasil, diretamente à pergunta do usuário.
+
+REGRAS OBRIGATÓRIAS:
+- Use os dados fornecidos como fonte de verdade.
+- Identifique exatamente o que está sendo contado: gols na carreira,
+  por clube ou pela seleção.
+- Responda à pergunta antes de apresentar explicações adicionais.
+- Associe cada número à fonte e ao critério de contagem correspondente.
+- Não misture estatísticas de categorias diferentes.
+- Se as fontes apresentarem números diferentes, explique a divergência
+  somente quando os dados fornecerem evidências para isso.
+- Não invente números, fontes, critérios ou explicações.
+- Não trate números de fontes diferentes como equivalentes sem evidências.
+- Se os dados não permitirem determinar um número único, deixe isso claro
+  e apresente os números sustentados pelas fontes, quando disponíveis.
+- Se os dados forem insuficientes, informe essa limitação.
+- Não reproduza títulos de notícias como resposta.
+- Não responda com outra pergunta ou com um assunto diferente.
+- Seja claro, conciso e objetivo.
+Nunca responda apenas com um número quando a pergunta
+solicitar uma estatística esportiva.
+
+Informe o que está sendo contado, a entidade responsável
+pela contagem e o critério correspondente, quando disponíveis.
+Se houver contagens diferentes relevantes, explique a diferença
+brevemente.
+"""
+
+    else:
+        prompt_sistema = """
+Você é o assistente virtual do Camisa10, especializado em futebol.
+
+Responda em português do Brasil, de forma natural, clara e objetiva.
+
+- Responda diretamente ao que o usuário perguntou.
+- Para perguntas gerais e conceituais, use seu conhecimento sobre futebol.
+- Quando houver dados fornecidos pelo sistema, utilize-os como referência.
+- Não invente informações apresentadas como fatos.
+- Respeite o conceito de futebol solicitado e não o substitua por outro.
+- Em comparações, explique todos os elementos solicitados.
+- Não apresente metadados internos ou títulos de notícias como resposta.
+- Se não souber algo com segurança, seja transparente.
+"""
+
+    instrucoes_por_intencao = {
+    "quantidade": """
+A pergunta pede a quantidade de gols de um jogador.
+
+- Identifique o jogador mencionado na pergunta.
+- Responda sobre esse jogador, sem trocar por outro.
+- Informe o total somente se houver suporte nos dados fornecidos.
+- Esclareça se o número corresponde à carreira inteira,
+  a clubes, à seleção ou a outra categoria.
+- Se as fontes divergirem, explique que o total depende
+  do critério de contagem.
+- Se não houver dados suficientes, diga isso claramente.
+- Não transforme a pergunta em uma comparação entre jogadores.
+""",
+    "comparacao": """
+A pergunta compara os gols de dois ou mais jogadores.
+
+- Identifique todos os jogadores mencionados.
+- Compare números da mesma categoria e do mesmo critério.
+- Informe as fontes e o período dos números, quando disponíveis.
+- Se os dados não forem comparáveis, explique a limitação.
+- Não declare um vencedor sem evidências suficientes.
+""",
+    "divergencia": """
+A pergunta procura explicar números estatísticos divergentes.
+
+- Apresente os números encontrados e suas fontes.
+- Explique os critérios diferentes somente quando documentados.
+- Não declare um número universalmente correto sem evidências.
+- Diferencie gols oficiais, amistosos e outras categorias
+  apenas quando as fontes permitirem essa distinção.
+"""
+}
+
+    if intencao_estatistica:
+        prompt_sistema += (
+            "\\n\\nINSTRUÇÕES ESPECÍFICAS PARA A INTENÇÃO "
+            f"{intencao_estatistica.upper()}:\\n"
+            + instrucoes_por_intencao[intencao_estatistica]
+        )
 
     resposta = ollama.chat(
         model="llama3.2:3b",
         messages=[
             {
                 "role": "system",
-                "content": """
-                Você é o assistente virtual oficial do Camisa10, especializado em futebol.
-
-                Sua função é responder perguntas dos usuários sobre futebol de forma
-                natural, clara e objetiva.
-
-                Você pode responder perguntas gerais e conceituais sobre futebol usando
-                seu próprio conhecimento, como regras, posições, fundamentos, competições,
-                história, termos e conceitos do esporte.
-
-                Quando receber dados fornecidos pelo sistema, esses dados são a fonte
-                de verdade e devem ser utilizados na resposta.
-
-                IMPORTANTE:
-                - Não omita informações importantes presentes nos dados fornecidos.
-                - Não invente informações que não estejam presentes nos dados.
-                - Antes de responder, identifique todos os conceitos de futebol mencionados na pergunta.
-                - Se a pergunta pedir a diferença ou comparação entre conceitos, a resposta deve
-                obrigatoriamente abordar todos eles.
-                - Para comparações entre dois conceitos, organize a resposta em três partes:
-                1. Primeiro conceito: explique sua definição.
-                2. Segundo conceito: explique sua definição.
-                3. Diferença principal: explique objetivamente o que distingue os dois.
-                - Use os dados fornecidos pelo sistema sempre que estiverem disponíveis.
-                - Se os dados de um conceito não estiverem disponíveis, explique apenas o que
-                souber com segurança, sem inventar informações.
-                - Nunca considere uma comparação respondida se apenas um dos conceitos tiver sido explicado.
-                - Quando houver um conceito identificado pelo sistema, use-o como referência,
-                mas respeite todos os elementos solicitados na pergunta.
-                - Não faça avaliações, julgamentos ou opiniões sobre o desempenho de times ou jogadores.
-                - Não use termos como "bom", "ruim", "razoável", "decente", "fraco", "forte",
-                "intermediário" ou semelhantes para avaliar uma campanha
-                - Apenas apresente e organize os dados fornecidos de forma natural e objetiva.
-                - Para perguntas sobre regras, história ou fatos específicos, responda 
-                principalmente com base no conhecimento fornecido pelo sistema.
-                - Você pode reformular o texto para deixar mais natural, mas não adicione informações
-                que não estejam nos dados fornecidos e não altere o significado deles.
-                - Quando os dados fornecidos apresentarem um conceito tático específico,
-                mantenha exatamente esse conceito na resposta.
-                - Não substitua um conceito tático por outro conceito semelhante.
-                - Se os dados forem sobre "linha alta", explique linha alta e não pressão alta.
-                - Se os dados forem sobre "pressão alta", explique pressão alta e não linha alta.
-                - Se os dados forem sobre "bloco baixo", explique bloco baixo e não contra-ataque.
-                - Preserve o significado do conceito tático mesmo quando a pergunta estiver escrita
-                de forma diferente.
-                - Nunca invente números, resultados, classificações ou estatísticas.
-                - Nunca altere os dados fornecidos pelo sistema.
-                - Para perguntas conceituais sobre futebol, responda normalmente usando
-                  seu conhecimento.
-                - Não diga que precisa consultar um "banco de dados do Camisa10".
-                - Não diga que não encontrou a informação no Camisa10.
-                - Se realmente não souber uma informação, seja transparente.
-                - Responda sempre em português do Brasil.
-                - Seja amigável e objetivo.
-                - Não inclua na resposta final mensagens internas de classificação,
-                diagnóstico ou processamento do sistema.
-                - Não escreva "Conceito identificado pelo sistema" na resposta ao usuário.
-                - Apresente diretamente a resposta à pergunta, sem reproduzir os metadados recebidos.
-                - Em perguntas sobre estatísticas históricas, diferencie os critérios
-                de contagem apresentados pelas fontes.
-                - Não apresente números com critérios diferentes como se fossem equivalentes.
-                - Se as fontes divergirem, explique brevemente o motivo da divergência.
-                - Não afirme que um total inclui determinadas competições ou partidas
-                se isso não estiver explicitamente confirmado pelos dados fornecidos.
-                - Para perguntas sobre gols na carreira, informe a qual critério cada
-                total corresponde, quando essa informação estiver disponível.
-                - Para perguntas que dependam de pesquisa externa, utilize somente
-                informações que estejam explicitamente presentes nos dados fornecidos.
-                - Associe cada número à entidade e ao critério de contagem corretos.
-                - Nunca atribua ao Santos números que pertencem à CBF ou à FIFA.
-                - Não invente explicações para divergências entre fontes.
-                - Se os resultados forem contraditórios ou insuficientes, informe
-                que não foi possível determinar com segurança o número correto.
-                - Não tente preencher lacunas usando suposições ou conhecimento próprio.
-                - Não repita informações contraditórias como se fossem fatos confirmados.
-                - Seja conciso: priorize a explicação da divergência e os números
-                que as fontes efetivamente sustentam.
-                - Antes de responder uma pergunta estatística, identifique exatamente
-                o que está sendo contado: gols pela seleção, por um clube ou na carreira.
-                - Não compare números referentes a categorias diferentes.
-                - Não atribua um número a uma entidade apenas porque ele aparece
-                no mesmo resultado de pesquisa.
-                - Para cada estatística, verifique no texto da fonte a qual categoria
-                ela se refere.
-                - Se não for possível determinar o critério de um número, não o apresente
-                como um fato confirmado.
-                - Evite listas de números sem explicação.
-                - Responda diretamente à pergunta e explique a divergência apenas
-                quando houver evidência suficiente nos resultados.
-                """
+                "content": prompt_sistema
             },
             {
                 "role": "user",
                 "content": f"""
-                Pergunta do usuário: {pergunta}
+Pergunta do usuário:
+{pergunta}
 
-                Conceito identificado pelo sistema: {
-                    dados.get("conceito") or "Não se aplica"
-                    if isinstance(dados, dict)
-                    else "Não se aplica"
-                }
+Conceito identificado pelo sistema:
+{conceito}
 
-                Dados fornecidos: {
-                    dados.get("dados") if isinstance(dados, dict) else dados
-                }
+Dados e contexto disponíveis:
+{contexto}
 
-                Responda à pergunta utilizando os dados fornecidos.
-
-                IMPORTANTE:
-                Se houver um conceito identificado pelo sistema, ele é a classificação correta da pergunta.
-                Explique especificamente esse conceito e não o substitua por outro conceito de futebol.
-                """
+Instrução final:
+Responda à pergunta acima usando as informações disponíveis.
+Não confunda o texto das fontes com a pergunta do usuário.
+Não invente informações que não estejam sustentadas pelos dados.
+"""
             }
-        ]
+        ],
+        options={
+            "temperature": 0.2
+        }
     )
 
     texto_resposta = resposta["message"]["content"].strip()
-
-    prefixos_internos = [
-        "O conceito identificado pelo sistema não foi aplicável à pergunta.",
-        "Conceito identificado pelo sistema:",
-        "O conceito identificado pelo sistema",
-    ]
-
-    for prefixo in prefixos_internos:
-        if texto_resposta.lower().startswith(prefixo.lower()):
-            texto_resposta = texto_resposta[len(prefixo):].strip()
-            texto_resposta = texto_resposta.lstrip(" .:\n")
 
     return texto_resposta
 
@@ -2396,6 +2399,83 @@ def gerar_resposta_tatica(dados):
         resposta += f"\n\nDesvantagens: {info['desvantagens']}"
 
     return resposta
+
+def normalizar_texto(texto: str) -> str:
+    texto = texto.lower().strip()
+    texto = unicodedata.normalize("NFD", texto)
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if unicodedata.category(caractere) != "Mn"
+    )
+    texto = re.sub(r"\s+", " ", texto)
+    return texto
+
+
+def identificar_intencao_estatistica(pergunta: str) -> str | None:
+    texto = normalizar_texto(pergunta)
+
+    termos_divergencia = [
+        "numeros diferentes",
+        "numero diferente",
+        "por que existem numeros",
+        "por que a contagem",
+        "qual numero esta correto",
+        "qual e o numero correto",
+        "divergencia nas estatisticas",
+        "estatisticas diferentes",
+        "por que varia a contagem",
+        "por que os dados divergem",
+        "qual numero de gols esta correto",
+        "qual numero de gols esta certo",
+        "qual contagem esta correta",
+        "qual total esta correto",
+    ]
+
+    termos_comparacao = [
+        "quem marcou mais",
+        "quem fez mais gols",
+        "quem tem mais gols",
+        "marcou mais gols",
+        "fez mais gols",
+        "maior artilheiro",
+        "maiores artilheiros",
+        "comparar os gols",
+        "comparacao de gols",
+        "sao os maiores artilheiros",
+        "quem e o maior goleador",
+        "pelé ou messi",
+        "pele ou messi",
+    ]
+
+    termos_quantidade = [
+        "quantos gols",
+        "quantos golos",
+        "quantos gol marcou",
+        "quantos gols marcou",
+        "quantos gols fez",
+        "quantos gols tem",
+        "numero de gols",
+        "total de gols",
+        "gols na carreira",
+        "gols pela selecao",
+        "gols pelo clube",
+        "marcou ao todo",
+        "marcou na carreira",
+        "quantidade de gols",
+        "total marcado",
+    ]
+
+    if any(termo in texto for termo in termos_divergencia):
+        return "divergencia"
+
+    if any(termo in texto for termo in termos_comparacao):
+        return "comparacao"
+
+    if any(termo in texto for termo in termos_quantidade):
+        return "quantidade"
+
+    return None
 
 @app.post("/api/chat")
 async def conversar(pergunta: Pergunta):
@@ -2939,9 +3019,68 @@ async def conversar(pergunta: Pergunta):
 
     if resultados_pesquisa:
         contexto_web = formatar_resultados_pesquisa(
-            resultados_pesquisa
+            resultados_pesquisa,
+            pergunta.pergunta
         )
-        
+
+        intencao_estatistica = identificar_intencao_estatistica(
+            pergunta.pergunta
+        )
+
+        instrucoes_estatisticas = {
+            "quantidade": """
+        A pergunta pede a quantidade de gols de um jogador.
+
+        - Identifique exatamente o jogador perguntado.
+        - Responda diretamente sobre esse jogador.
+        - Não apresente um número como definitivo se as fontes
+          mostrarem critérios de contagem diferentes.
+        - Informe o número e a fonte que o atribui ao jogador.
+        - Esclareça se a contagem inclui amistosos ou jogos não oficiais,
+          somente quando isso estiver documentado nas fontes.
+        - Se houver números divergentes, cite os principais valores
+          encontrados e explique brevemente por que variam,
+          quando as fontes permitirem essa conclusão.
+        - Não misture gols por clube, pela seleção e na carreira.
+        - Não invente números ou critérios.
+        - Se os dados não permitirem identificar um total confiável,
+          explique essa limitação.
+        """,
+            "comparacao": """
+    A pergunta solicita uma comparação de gols entre jogadores.
+    Identifique os jogadores e apresente os números encontrados
+    para cada um, com as fontes e datas de referência disponíveis.
+    Use o mesmo critério para ambos, como gols em partidas oficiais.
+    Não compare números de períodos diferentes como se fossem atuais.
+    Se os dados não forem suficientes para uma comparação confiável,
+    explique exatamente qual informação está faltando.
+    Não diga que a comparação é impossível apenas porque existem
+    critérios de contagem diferentes.
+    """,
+            "divergencia": """
+    A pergunta solicita uma explicação sobre diferenças estatísticas.
+    Apresente os números e atribua cada um à respectiva fonte.
+    Explique os critérios de contagem apenas quando as fontes
+    sustentarem essa explicação.
+    Não declare um único total universalmente correto sem evidências.
+    """
+        }
+
+        if intencao_estatistica in instrucoes_estatisticas:
+            contexto_web = f"""
+    PERGUNTA ORIGINAL:
+    {pergunta.pergunta}
+
+    TIPO DE PERGUNTA:
+    {intencao_estatistica}
+
+    INSTRUÇÕES ESPECÍFICAS:
+    {instrucoes_estatisticas[intencao_estatistica]}
+
+    DADOS ENCONTRADOS NA PESQUISA:
+    {contexto_web}
+    """
+
         resposta = gerar_resposta_ollama(
             pergunta.pergunta,
             contexto_web
@@ -2956,7 +3095,7 @@ async def conversar(pergunta: Pergunta):
         return {
             "response": resposta + fontes
         }
-
+    
     time = identificar_time(pergunta.pergunta)
 
     if time is None:
