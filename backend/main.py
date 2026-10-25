@@ -9,7 +9,7 @@ import unicodedata
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
-from backend.knowledge.external_research import (pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica)
+from backend.knowledge.external_research import (extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica)
 import requests
 import re
 
@@ -2522,8 +2522,11 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
 
 def extrair_totais_gols_comparacao(resultados: list) -> dict:
     """
-    Organiza fontes e extrai totais de gols por clubes
-    quando a tabela identifica explicitamente Jogos e Gols.
+     Organiza fontes e extrai:
+    - totais de clubes principais;
+    - totais pela seleção principal;
+    - total combinado, quando ambos são encontrados
+      na mesma fonte.
     """
     dados = {}
 
@@ -2534,6 +2537,7 @@ def extrair_totais_gols_comparacao(resultados: list) -> dict:
         titulo = resultado.get("titulo", "")
         url = resultado.get("url", "")
         conteudo = resultado.get("conteudo", "")
+        datas_atualizacao = extrair_datas_atualizacao_site(conteudo)
 
         if not jogador or not conteudo:
             continue
@@ -2545,52 +2549,341 @@ def extrair_totais_gols_comparacao(resultados: list) -> dict:
                 "jogador": jogador,
                 "fontes": [],
                 "totais_clubes": [],
+                "totais_selecao": [],
+                "totais_carreira": []
             }
 
-        dados[chave]["fontes"].append({
+        fonte = {
             "titulo": titulo,
             "url": url,
             "conteudo": conteudo,
-        })
+            "data_publicacao": resultado.get("data_publicacao", ""),
+            "data_publicacao_iso": resultado.get("data_publicacao_iso", ""),
+            "data_atualizacao": resultado.get("data_atualizacao", ""),
+            "data_atualizacao_clubes": datas_atualizacao["data_atualizacao_clubes"],
+            "data_atualizacao_selecao": datas_atualizacao["data_atualizacao_selecao"],
+        }
 
-        # Localiza especificamente a tabela de clubes profissionais.
-        cabecalho = re.search(
-            r"Período\s*\|\s*Clube\s*\|\s*Jogos\s*\|\s*Gol\(o\)s",
-            conteudo,
-            re.IGNORECASE,
+        dados[chave]["fontes"].append(fonte)
+
+        clubes = extrair_gols_clubes_principais(conteudo)
+        selecao = extrair_gols_selecao_principal(conteudo)
+
+        if clubes is not None:
+            dados[chave]["totais_clubes"].append({
+                **clubes,
+                "titulo": titulo,
+                "url": url,
+                "data_publicacao": resultado.get("data_publicacao", ""),
+                "data_publicacao_iso": resultado.get("data_publicacao_iso", ""),
+                "data_atualizacao": resultado.get("data_atualizacao", ""),
+                "data_atualizacao_clubes": datas_atualizacao["data_atualizacao_clubes"],
+            })
+
+        if selecao is not None:
+            dados[chave]["totais_selecao"].append({
+                **selecao,
+                "titulo": titulo,
+                "url": url,
+                "data_publicacao": resultado.get("data_publicacao", ""),
+                "data_publicacao_iso": resultado.get("data_publicacao_iso", ""),
+                "data_atualizacao": resultado.get("data_atualizacao", ""),
+                "data_atualizacao_selecao": datas_atualizacao["data_atualizacao_selecao"],
+            })
+
+        if clubes is not None and selecao is not None:
+            dados[chave]["totais_carreira"].append({
+                "gols_clubes_principais": clubes["gols"],
+                "gols_selecao_principal": selecao["gols"],
+                "gols": clubes["gols"] + selecao["gols"],
+                "jogos_clubes_principais": clubes["jogos"],
+                "jogos_selecao_principal": selecao["jogos"],
+                "titulo": titulo,
+                "url": url,
+                "data_publicacao": resultado.get("data_publicacao", ""),
+                "data_publicacao_iso": resultado.get("data_publicacao_iso", ""),
+                "data_atualizacao": resultado.get("data_atualizacao", ""),
+                "data_atualizacao_clubes": datas_atualizacao["data_atualizacao_clubes"],
+                "data_atualizacao_selecao": datas_atualizacao["data_atualizacao_selecao"],
+            })
+
+    print(
+        f"Fonte: {titulo}\n"
+        f"Publicação: {resultado.get('data_publicacao') or 'Não informada'}\n"
+        f"Atualização: {resultado.get('data_atualizacao') or 'Não identificada'}"
+    )
+
+    return dados
+
+def extrair_datas_atualizacao_site(conteudo: str) -> dict:
+    datas = {
+        "data_atualizacao_clubes": "",
+        "data_atualizacao_selecao": "",
+    }
+
+    if not conteudo:
+        return datas
+
+    padrao_clubes = (
+        r"Partidas e gol\(o\)s totais pelos clubes,"
+        r"\s*atualizadas até\s+([^\.]+)\."
+    )
+
+    padrao_selecao = (
+        r"Partidas e gol\(o\)s pela seleção"
+        r"\s+(?:estão\s+)?atualizadas até\s+([^\.]+)\."
+    )
+
+    clubes = re.search(
+        padrao_clubes, conteudo, flags=re.IGNORECASE
+    )
+    selecao = re.search(
+        padrao_selecao, conteudo, flags=re.IGNORECASE
+    )
+
+    if clubes:
+        datas["data_atualizacao_clubes"] = (
+            clubes.group(1).strip()
         )
 
-        if not cabecalho:
+    if selecao:
+        datas["data_atualizacao_selecao"] = (
+            selecao.group(1).strip()
+        )
+
+    return datas
+
+def extrair_gols_clubes_principais(conteudo: str):
+    """Extrai jogos e gols de clubes principais, excluindo equipes B."""
+
+    inicio = re.search(r"\|\s*Profissional\d*\s*\|", conteudo, re.I)
+    if not inicio:
+        return None
+
+    trecho = conteudo[inicio.end():]
+
+    fim = re.search(r"\|\s*Seleção\d*\s*\|", trecho, re.I)
+    if fim:
+        trecho = trecho[:fim.start()]
+
+    padrao = re.compile(
+        r"\|\s*(\d{4}\s*[–—-]\s*\d{4}|\d{4}–?)\s*"
+        r"\|\s*([^|]+?)\s*"
+        r"\|\s*(\d+)\s*"
+        r"\|\s*(\d+)\s*\|",
+        re.I,
+    )
+
+    jogos_total = 0
+    gols_total = 0
+    linhas_encontradas = 0
+
+    for _, clube, jogos, gols in padrao.findall(trecho):
+        clube = clube.strip()
+
+        if re.search(
+            r"\b(?:B|II|Castilla|reserve|reservas|"
+            r"sub[- ]?\d+|u[- ]?\d+|juvenil)\b",
+            clube,
+            re.I,
+        ):
             continue
 
-        # Recorta a tabela antes da seção seguinte.
-        inicio = cabecalho.start()
-        fim = conteudo.find("| Seleção", cabecalho.end())
+        jogos_total += int(jogos)
+        gols_total += int(gols)
+        linhas_encontradas += 1
 
-        if fim == -1:
-            fim = len(conteudo)
+    if linhas_encontradas == 0:
+        return None
 
-        tabela_clubes = conteudo[inicio:fim]
+    return {
+        "jogos": jogos_total,
+        "gols": gols_total,
+        "linhas_encontradas": linhas_encontradas
+    }
 
-        # Extrai somente o total dentro da tabela de clubes.
-        total = re.search(
-            r"\|\s*Total\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|",
-            tabela_clubes,
-            re.IGNORECASE,
+def extrair_gols_selecao_principal(conteudo: str) -> int | None:
+    inicio = re.search(r"####\s*Principal\b", conteudo, re.I)
+
+    if not inicio:
+        inicio = re.search(r"Seleção Principal", conteudo, re.I)
+
+    if not inicio:
+        return None
+
+    trecho = conteudo[inicio.end():]
+
+    total = re.search(
+        r"\|\s*Total na carreira\s*\|([^\n]*)",
+        trecho,
+        re.I
+    )
+
+    if not total:
+        return None
+
+    celulas = [
+        valor.strip()
+        for valor in total.group(1).split("|")
+        if valor.strip()
+    ]
+
+    if len(celulas) < 3:
+        return None
+
+    try:
+        jogos = int(celulas[-3])
+        gols = int(celulas[-2])
+    except (ValueError, IndexError):
+        return None
+
+    return {
+        "jogos": jogos,
+        "gols": gols
+    }
+
+def montar_totais_carreira(
+    gols_clubes: int | None,
+    gols_selecao: int | None,   
+) -> dict:
+    """Só calcula o total quando os dois componentes foram encontrados."""
+
+    if gols_clubes is None or gols_selecao is None:
+        return {
+            "gols_clubes_principais": gols_clubes,
+            "gols_selecao_principal": gols_selecao,
+            "gols_carreira": None,
+            "validado": False,
+        }
+
+    return {
+        "gols_clubes_principais": gols_clubes,
+        "gols_selecao_principal": gols_selecao,
+        "gols_carreira": gols_clubes + gols_selecao,
+        "validado": True,
+    }
+
+def normalizar_nome_jogador(nome: str) -> str:
+    """Normaliza o nome para facilitar a comparação."""
+    nome = nome.casefold()
+    nome = re.sub(r"[^a-z0-9]+", " ", nome)
+    return " ".join(nome.split())
+
+
+def montar_resposta_comparacao_gols_clubes(
+    dados: dict,
+    jogadores_solicitados: list
+) -> str:
+    linhas = [
+        "Comparei os gols pelos clubes principais e pela seleção principal."
+    ]
+
+    totais_encontrados = []
+
+    for jogador_solicitado in jogadores_solicitados:
+        chave = jogador_solicitado.casefold()
+
+        info = dados.get(chave)
+
+        if not info:
+            info = next(
+                (
+                    valor for valor in dados.values()
+                    if valor.get("jogador", "").casefold() == chave
+                ),
+                None
+            )
+
+        if not info:
+            linhas.append(
+                f"\n**{jogador_solicitado}**: "
+                "não encontrei dados suficientes."
+            )
+            continue
+
+        total = next(
+            (
+                item for item in info.get("totais_carreira", [])
+                if "gols_clubes_principais" in item
+                and "gols_selecao_principal" in item
+            ),
+            None
         )
 
         if total:
-            jogos = int(total.group(1))
-            gols = int(total.group(2))
+            gols_clubes = total["gols_clubes_principais"]
+            gols_selecao = total["gols_selecao_principal"]
+            gols_total = total["gols"]
+            jogos_clubes = total["jogos_clubes_principais"]
+            jogos_selecao = total["jogos_selecao_principal"]
 
-            dados[chave]["totais_clubes"].append({
-                "jogos": jogos,
-                "gols": gols,
-                "titulo": titulo,
-                "url": url,
+            data_clubes = (
+                total.get("data_atualizacao_clubes")
+                or "não identificada na fonte"
+            )
+
+            data_selecao = (
+                total.get("data_atualizacao_selecao")
+                or "não identificada na fonte"
+            )
+
+            linhas.append(
+                f"\n**{info['jogador']}**\n"
+                f"- Clubes principais: {gols_clubes} gols "
+                f"em {jogos_clubes} jogos.\n"
+                f"- Atualização dos dados de clubes: {data_clubes}.\n"
+                f"- Seleção principal: {gols_selecao} gols "
+                f"em {jogos_selecao} jogos.\n"
+                f"- Atualização dos dados da Seleção: {data_selecao}.\n"
+                f"- **Soma dos dois: {gols_total} gols.**\n"
+                f"Fonte: [{total['titulo']}]({total['url']})"
+            )
+
+            totais_encontrados.append({
+                "jogador": info["jogador"],
+                "gols": gols_total
             })
 
-    return dados
+        else:
+            total_clubes = next(
+                iter(info.get("totais_clubes", [])),
+                None
+            )
+
+            if total_clubes:
+                data_clubes = (
+                    total_clubes.get("data_atualizacao_clubes")
+                    or "não identificada na fonte"
+                )
+
+                linhas.append(
+                    f"\n**{info['jogador']}**: "
+                    f"{total_clubes['gols']} gols em "
+                    f"{total_clubes['jogos']} jogos pelos clubes principais.\n"
+                    f"- Atualização dos dados de clubes: {data_clubes}.\n"
+                    "O total da seleção não foi encontrado.\n"
+                    f"Fonte: [{total_clubes['titulo']}]"
+                    f"({total_clubes['url']})"
+                )
+
+    if len(totais_encontrados) == 2:
+        diferenca = abs(
+            totais_encontrados[0]["gols"]
+            - totais_encontrados[1]["gols"]
+        )
+
+        linhas.append(
+            f"\n**Comparação:** a diferença entre as somas "
+            f"encontradas é de {diferenca} gols."
+        )
+
+    linhas.append(
+        "\n**Limitação:** os números dependem das datas de "
+        "atualização das fontes. A soma considera clubes principais "
+        "e seleção principal, sem equipes B ou categorias de base."
+    )
+
+    return "\n".join(linhas)
 
 @app.post("/api/chat")
 async def conversar(pergunta: Pergunta):
@@ -3152,6 +3445,27 @@ async def conversar(pergunta: Pergunta):
     print(dados_comparacao)
     print("=== FIM DOS TOTAIS ===\n")
 
+    if (
+        intencao_estatistica == "comparacao"
+        and re.search(r"\bgols?\b", pergunta.pergunta, re.IGNORECASE)
+    ):
+        jogadores_solicitados = extrair_jogadores_comparacao(
+            pergunta.pergunta
+        )
+
+        print("JOGADORES SOLICITADOS:", jogadores_solicitados)
+
+        resposta_comparacao = montar_resposta_comparacao_gols_clubes(
+            dados_comparacao,
+            jogadores_solicitados
+        )
+
+        print("RESPOSTA DA COMPARAÇÃO:", resposta_comparacao)
+
+        return {
+            "response": resposta_comparacao    
+        }
+    
     print("RESULTADOS DA WEB:", len(resultados_pesquisa))
 
     if resultados_pesquisa:

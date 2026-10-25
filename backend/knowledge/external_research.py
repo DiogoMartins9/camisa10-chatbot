@@ -70,6 +70,47 @@ def obter_data_publicacao(resultado: dict):
 
     return None
 
+
+def obter_data_atualizacao(conteudo: str) -> str:
+    if not conteudo:
+        return ""
+
+    meses = (
+        r"janeiro|fevereiro|março|marco|abril|maio|junho|"
+        r"julho|agosto|setembro|outubro|novembro|dezembro"
+    )
+
+    padroes = [
+        # Ex.: Atualizado em 25/10/2026
+        r"(?:última|ultima)\s+(?:atualização|atualizacao|"
+        r"edição|edicao)|"
+        r"atualizado|atualizada|"
+        r"última modificação|ultima modificacao|"
+        r"last updated|last modified",
+    ]
+
+    for padrao in padroes:
+        for correspondencia in re.finditer(
+            padrao, conteudo, flags=re.IGNORECASE
+        ):
+            trecho = conteudo[
+                correspondencia.end():correspondencia.end() + 100
+            ]
+
+            data = re.search(
+                rf"\b(\d{{1,2}}[/-]\d{{1,2}}[/-]\d{{4}}|"
+                rf"\d{{1,2}}\s+de\s+(?:{meses})"
+                rf"(?:\s+de)?\s+\d{{4}})\b",
+                trecho,
+                flags=re.IGNORECASE,
+            )
+
+            if data:
+                return data.group(1)
+
+    return ""
+
+
 def pontuar_fonte(url: str) -> int:
     """Dá prioridade a domínios confiáveis para pesquisa esportiva."""
     dominio = obter_dominio(url)
@@ -367,6 +408,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                             or item.get("publication_date")
                             or ""
                         ),
+                        "data_atualizacao": obter_data_atualizacao(conteudo),
                         "jogador_pesquisado": jogador,
                     }
 
