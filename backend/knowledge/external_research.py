@@ -1,6 +1,7 @@
 import os
 from urllib.parse import urlparse
 import httpx
+import re
 from dotenv import load_dotenv
 from datetime import date, datetime, timedelta
 
@@ -173,19 +174,38 @@ def pergunta_sobre_comparacao_estatistica(pergunta: str) -> bool:
         "quem marcou mais gols",
         "quem fez mais gols",
         "quem tem mais gols",
+        "quem marcou mais",
+        "quem fez mais",
+        "quem tem mais",
         "comparar gols",
         "comparação de gols",
-        "pelé e messi",
-        "pele e messi",
-        "pelé ou messi",
-        "pele ou messi",
+        "comparacao de gols",
+        "compare os gols",
+        "comparar a quantidade de gols",
+        "comparação entre",
+        "comparacao entre",
+        "compare",
+        "comparar",
         "maior artilheiro",
         "gols oficiais na carreira",
     ]
 
-    return any(
+    menciona_gols = any(
+        termo in texto
+        for termo in [
+            "gol",
+            "gols",
+            "artilheiro",
+            "artilheiros",
+            "artilharia",
+        ]
+    )
+
+    menciona_comparacao = any(
         termo in texto for termo in termos_comparacao
     )
+
+    return menciona_gols and menciona_comparacao
 
 def pergunta_compara_gols_atuais(pergunta: str) -> bool:
     texto = pergunta.lower()
@@ -194,16 +214,61 @@ def pergunta_compara_gols_atuais(pergunta: str) -> bool:
         "quem marcou mais gols",
         "quem fez mais gols",
         "quem tem mais gols",
-        "pelé e messi",
-        "pele e messi",
-        "pelé ou messi",
-        "pele ou messi",
+        "quem marcou mais",
+        "quem fez mais",
+        "quem tem mais",
+        "comparar gols",
+        "comparação de gols",
+        "comparacao de gols",
+        "compare os gols",
+        "comparar a quantidade de gols",
         "gols oficiais na carreira",
     ]
 
     return any(termo in texto for termo in termos)
 
+def extrair_jogadores_comparacao(pergunta: str) -> list[str]:
+    """
+    Extrai os nomes dos jogadores citados em uma comparação.
+    """
+    texto = pergunta.strip()
 
+    texto = re.sub(
+        r"(?i)^quem\b.*?,\s*",
+        "",
+        texto,
+    )
+
+    texto = re.sub(
+        r"(?i)^(?:compare|comparar|comparação entre|comparacao entre)"
+        r"\s+(?:os\s+)?gols?"
+        r"(?:\s+oficiais)?"
+        r"(?:\s+na carreira)?"
+        r"\s+(?:de\s+)?",
+        "",
+        texto,
+    )
+
+    texto = re.sub(
+        r"(?i)^(?:compare|comparar)\s+",
+        "",
+        texto,
+    )
+
+    partes = re.split(
+        r"(?i)\s+(?:e|ou|versus|vs\.?|contra)\s+|[,;]",
+        texto,
+    )
+
+    jogadores = []
+
+    for parte in partes:
+        nome = parte.strip(" \t\n?!:.-")
+
+        if nome:
+            jogadores.append(nome)
+
+    return jogadores[:2]
 
 async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
     """
@@ -223,39 +288,30 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
 
     if eh_comparacao:
         data_referencia = hoje.strftime("%d/%m/%Y")
+        jogadores = extrair_jogadores_comparacao(pergunta)
+
+        if len(jogadores) != 2:
+            print(
+                "Não foi possível identificar os dois jogadores "
+                "da comparação."
+            )
+            return []
 
         consultas = [
             {
-                "jogador": "Pelé",
+                "jogador": jogador,
                 "query": (
-                    "Pelé total de gols oficiais na carreira profissional, "
-                    "clubes e seleção brasileira, partidas oficiais, "
-                    "estatísticas históricas e critérios de contagem. "
-                    f"Referência: {data_referencia}. "
-                    "Diferencie amistosos e jogos não oficiais. "
-                    "Priorize fontes estatísticas verificáveis."
+                    f"{jogador} total de gols oficiais na carreira profissional "
+                    "por clubes e seleção principal, somando todas as competições "
+                    "oficiais. Estatísticas atualizadas, jogos e gols por competição. "
+                    "Diferencie partidas oficiais de amistosos e categorias de base. "
+                    "Priorize bases estatísticas detalhadas e fontes confiáveis."
+                    f" Referência: {data_referencia}."
                 ),
-            },
-            {
-                "jogador": "Lionel Messi",
-                "query": (
-                    "Lionel Messi total atualizado de gols oficiais "
-                    "na carreira profissional, todos os clubes e seleção "
-                    "principal da Argentina, partidas oficiais. "
-                    f"Referência: {data_referencia}. "
-                    "Não confunda gols por um único clube com o total "
-                    "da carreira. Priorize fontes estatísticas verificáveis."
-                ),
-            },
-        ]
-    else:
-        consultas = [
-            {
-                "jogador": "",
-                "query": pergunta,
             }
+            for jogador in jogadores
         ]
-
+     
     resultados = []
 
     try:
@@ -350,29 +406,32 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                 reverse=True,
             )
 
-            # Preserva resultados das duas pesquisas.
-            resultados_pele = [
-                item for item in resultados
-                if item["jogador_pesquisado"] == "Pelé"
-            ]
-            resultados_messi = [
-                item for item in resultados
-                if item["jogador_pesquisado"] == "Lionel Messi"
-            ]
+            resultados_por_jogador = {}
 
-            resultados = resultados_pele[:max_resultados] + resultados_messi[
-                :max_resultados
-            ]
+            for item in resultados:
+                jogador = item.get("jogador_pesquisado", "")
+                resultados_por_jogador.setdefault(jogador, []).append(item)
 
-        else:
-            resultados.sort(
-                key=lambda item: (
-                    item["pontuacao_fonte"],
-                    item["relevancia_tavily"],
-                ),
-                reverse=True,
-            )
-            resultados = resultados[:max_resultados]
+            resultados_finais = []
+
+            for jogador in extrair_jogadores_comparacao(pergunta):
+                resultados_jogador = resultados_por_jogador.get(
+                    jogador, []
+                )
+
+                resultados_jogador.sort(
+                    key=lambda item: (
+                        item["pontuacao_fonte"],
+                        item["relevancia_tavily"],
+                    ),
+                    reverse=True
+                )
+
+                resultados_finais.extend(
+                    resultados_jogador[:max_resultados]
+                )
+
+            resultados = resultados_finais
 
         print(f"\nPergunta pesquisada: {pergunta}")
         print(f"Data de referência: {hoje.strftime('%d/%m/%Y')}")
@@ -386,6 +445,25 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                 f"Data: {item.get('data_publicacao') or 'Não informada'}"
             )
 
+        if eh_comparacao:
+            jogadores = extrair_jogadores_comparacao(pergunta)
+
+            for jogador in jogadores:
+                fontes_jogador = [
+                    item for item in resultados
+                    if item.get("jogador_pesquisado") == jogador
+                ]
+
+            print(f"\n{'=' * 70}")
+            print(f"CONTEÚDO BRUTO — {jogador}")
+            print(f"{'=' * 70}")
+
+            for item in fontes_jogador[:2]:
+                print(f"\nFonte: {item['titulo']}")
+                print(f"URL: {item['url']}")
+                print((item.get("conteudo") or "")[:1800])
+                print("-" * 50) 
+
         return resultados
 
     except httpx.HTTPError as erro:
@@ -395,6 +473,163 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
     except (ValueError, KeyError) as erro:
         print(f"Erro ao processar resultados da pesquisa: {erro}")
         return []
+
+
+
+def organizar_evidencias_comparacao(resultados: list) -> str:
+    """
+    Organiza as evidências por jogador, preservando tabelas,
+    cabeçalhos, contexto, origem e informações relevantes.
+    """
+
+    jogadores = {}
+
+    termos_relevantes = (
+        "gol", "gols", "gol(o)s", "marcou", "marcados",
+        "carreira", "oficial", "oficiais", "temporada",
+        "clube", "clubes", "seleção", "selecao",
+        "amistoso", "amistosos", "partidas", "jogos",
+        "total",
+    )
+
+    indicadores_parciais = (
+        "sob o comando",
+        "com ancelotti",
+        "na temporada",
+        "nesta temporada",
+    )
+
+    for resultado in resultados:
+        jogador = (
+            resultado.get("jogador_pesquisado") or ""
+        ).strip() or "Jogador não identificado"
+
+        titulo = resultado.get("titulo", "Sem título")
+        url = resultado.get("url", "")
+        conteudo = resultado.get("conteudo", "").strip()
+
+        if not conteudo:
+            continue
+
+        # Separa linhas e frases sem perder as linhas das tabelas.
+        trechos = re.split(
+            r"(?<=[.!?])\s+|\n+",
+            conteudo,
+        )
+
+        trechos_relevantes = []
+        cabecalhos_tabela = []
+
+        for trecho in trechos:
+            trecho_limpo = trecho.strip()
+
+            if not trecho_limpo:
+                continue
+
+            trecho_lower = trecho_limpo.lower()
+
+            # Preserva cabeçalhos de tabelas com jogos e gols.
+            if (
+                "|" in trecho_limpo
+                and any(
+                    termo in trecho_lower
+                    for termo in (
+                        "gol", "gol(o)s", "jogos",
+                        "partidas", "total", "clube",
+                        "ano", "período", "periodo",
+                    )
+                )
+            ):
+                cabecalhos_tabela.append(trecho_limpo)
+
+            menciona_estatistica = any(
+                termo in trecho_lower
+                for termo in termos_relevantes
+            )
+
+            menciona_numero = any(
+                caractere.isdigit()
+                for caractere in trecho_limpo
+            )
+
+            linha_total_tabela = (
+                "|" in trecho_limpo
+                and "total" in trecho_lower
+                and menciona_numero
+            )
+
+            texto_estatistico = (
+                menciona_estatistica
+                and menciona_numero
+            )
+
+            if not (
+                linha_total_tabela or texto_estatistico
+            ):
+                continue
+
+            # Não descarta automaticamente estatísticas por
+            # aparecerem em uma temporada ou ano específico.
+            # O contexto precisa ser preservado para avaliação.
+            trechos_relevantes.append(trecho_limpo)
+
+        # Remove duplicatas sem alterar a ordem.
+        trechos_relevantes = list(
+            dict.fromkeys(trechos_relevantes)
+        )
+        cabecalhos_tabela = list(
+            dict.fromkeys(cabecalhos_tabela)
+        )
+
+        # Mantém os cabeçalhos junto dos dados para evitar
+        # que números sejam interpretados fora de contexto.
+        evidencia_partes = []
+
+        if cabecalhos_tabela:
+            evidencia_partes.append(
+                "Cabeçalhos e linhas de tabela:\n"
+                + "\n".join(cabecalhos_tabela[:10])
+            )
+
+        if trechos_relevantes:
+            evidencia_partes.append(
+                "Trechos estatísticos:\n"
+                + "\n".join(trechos_relevantes[:15])
+            )
+
+        evidencia = "\n\n".join(evidencia_partes)
+
+        if not evidencia:
+            evidencia = (
+                "O conteúdo desta fonte não apresentou trechos "
+                "estatísticos que passaram pelos filtros. "
+                "Isso não significa que a fonte não tenha dados."
+            )
+
+        jogadores.setdefault(jogador, []).append(
+            f"Fonte: {titulo}\n"
+            f"URL: {url or 'Não disponível'}\n"
+            f"{evidencia[:2500]}"
+        )
+
+    if not jogadores:
+        return "Nenhuma evidência estatística foi encontrada."
+
+    partes = [
+        "As evidências abaixo foram extraídas dos resultados "
+        "da pesquisa. Os números podem corresponder a critérios "
+        "diferentes; confira os cabeçalhos, o contexto e a fonte. "
+        "Não some categorias automaticamente nem confunda gols "
+        "por clubes com o total geral da carreira."
+    ]
+
+    for jogador, fontes in jogadores.items():
+        partes.append(
+            f"=== JOGADOR PESQUISADO: {jogador} ===\n"
+            + "\n\n".join(fontes)
+        )
+
+    return "\n\n".join(partes)
 
 def formatar_resultados_pesquisa(
     resultados: list,
@@ -411,7 +646,8 @@ def formatar_resultados_pesquisa(
         titulo = resultado.get("titulo", "Sem título")
         url = resultado.get("url", "")
         conteudo = resultado.get("conteudo", "").strip()
-        jogador = resultado.get("jogador_pesquisado", "")
+        jogador = resultado.get("jogador_pesquisado", "").strip()
+        jogador = jogador.strip()
 
         data_publicacao = (
             resultado.get("data_publicacao") or "Não informada"
@@ -433,6 +669,9 @@ def formatar_resultados_pesquisa(
         return ""
 
     contexto = "\n\n---\n\n".join(partes)
+
+    if pergunta_sobre_comparacao_estatistica(pergunta):
+        return organizar_evidencias_comparacao(resultados)
 
     eh_divergencia = pergunta_sobre_divergencia_estatistica(pergunta)
     eh_comparacao = pergunta_sobre_comparacao_estatistica(pergunta)

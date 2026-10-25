@@ -1849,45 +1849,24 @@ def gerar_resposta_ollama(pergunta, dados):
         prompt_sistema = """
 Você é o assistente virtual do Camisa10, especializado em futebol.
 
-Responda em português do Brasil, diretamente à pergunta do usuário.
+Responda em português brasileiro, de forma clara, objetiva e natural.
 
-REGRAS OBRIGATÓRIAS:
-- Use os dados fornecidos como fonte de verdade.
-- Identifique exatamente o que está sendo contado: gols na carreira,
-  por clube ou pela seleção.
-- Responda à pergunta antes de apresentar explicações adicionais.
-- Associe cada número à fonte e ao critério de contagem correspondente.
-- Não misture estatísticas de categorias diferentes.
-- Se as fontes apresentarem números diferentes, explique a divergência
-  somente quando os dados fornecerem evidências para isso.
-- Não invente números, fontes, critérios ou explicações.
-- Não trate números de fontes diferentes como equivalentes sem evidências.
-- Se os dados não permitirem determinar um número único, deixe isso claro
-  e apresente os números sustentados pelas fontes, quando disponíveis.
-- Se os dados forem insuficientes, informe essa limitação.
-- Não reproduza títulos de notícias como resposta.
-- Não responda com outra pergunta ou com um assunto diferente.
-- Seja claro, conciso e objetivo.
-Nunca responda apenas com um número quando a pergunta
-solicitar uma estatística esportiva.
-
-Informe o que está sendo contado, a entidade responsável
-pela contagem e o critério correspondente, quando disponíveis.
-Se houver contagens diferentes relevantes, explique a diferença
-brevemente.
-REGRAS OBRIGATÓRIAS PARA COMPARAÇÕES:
-
-- Os jogadores citados na pergunta original são fixos.
-- Não substitua nenhum jogador por outro, mesmo que o outro seja
-  mais conhecido ou apareça com mais frequência nos dados.
-- Antes de responder, confira se cada jogador citado na pergunta
-  foi tratado individualmente.
-- Use somente números que possam ser associados a uma fonte
-  presente no contexto fornecido.
-- Se não houver dados suficientes para um jogador, informe
-  explicitamente que o dado não foi encontrado.
-- Não invente estatísticas adicionais de ligas, seleções ou títulos
-  que não sejam necessárias para responder à pergunta.
+REGRAS:
+- Responda à pergunta original, sem mudar seu objetivo.
+- Utilize as evidências fornecidas para responder às perguntas estatísticas.
+- Não invente números, fontes, datas ou critérios de contagem.
+- Associe cada número à fonte e ao contexto que realmente o sustentam.
+- Diferencie totais da carreira, estatísticas de clubes, seleção,
+  temporadas e competições.
+- Não confunda gols oficiais com totais que incluem partidas não oficiais.
+- Não considere um número confirmado apenas porque aparece no contexto.
+- Se as fontes forem insuficientes, antigas ou incompatíveis,
+  explique a limitação de forma objetiva.
+- Em comparações, analise cada jogador separadamente.
+- Só conclua quem tem mais gols quando os números forem comparáveis.
+- Não substitua os jogadores solicitados por outros.
+- Não acrescente estatísticas irrelevantes.
+- Não apresente títulos de notícias como se fossem respostas.
 """
 
     else:
@@ -1907,62 +1886,76 @@ Responda em português do Brasil, de forma natural, clara e objetiva.
 """
 
     instrucoes_por_intencao = {
-    "quantidade": """
+        "quantidade": """
 A pergunta pede a quantidade de gols de um jogador.
 
-- Identifique o jogador mencionado na pergunta.
-- Responda sobre esse jogador, sem trocar por outro.
-- Informe o total somente se houver suporte nos dados fornecidos.
-- Esclareça se o número corresponde à carreira inteira,
-  a clubes, à seleção ou a outra categoria.
-- Se as fontes divergirem, explique que o total depende
-  do critério de contagem.
-- Se não houver dados suficientes, diga isso claramente.
-- Não transforme a pergunta em uma comparação entre jogadores.
+- Identifique o jogador e a estatística solicitada.
+- Se a pergunta pedir gols oficiais, considere somente gols
+  em partidas classificadas como oficiais pelas fontes.
+- Se pedir gols na carreira sem especificar "oficiais",
+  considere o total geral informado pelas fontes, incluindo
+  partidas não oficiais quando estiverem contabilizadas.
+- Não some números que já fazem parte de um total apresentado.
+- Informe o critério de contagem e a fonte de cada número.
+- Se houver divergências, explique os critérios encontrados.
+- Não invente números nem transforme a pergunta em comparação.
 """,
-    "comparacao": """
-A pergunta compara estatísticas de dois ou mais jogadores.
 
-Siga estas etapas:
-1. Identifique os jogadores solicitados na pergunta original.
-2. Analise separadamente os dados encontrados para cada jogador.
-3. Extraia somente números que as fontes realmente sustentem.
-4. Verifique se cada número representa gols oficiais na carreira
-   inteira ou uma categoria diferente.
-5. Verifique se os números abrangem períodos comparáveis.
-6. Não confunda uma marca individual, como 900 gols, com uma
-   comparação entre os jogadores.
-7. Não use gols por um único clube como total da carreira.
-8. Não invente o total ausente de nenhum jogador.
-9. Não presuma que um número está atualizado na data da consulta.
-10. Se os critérios forem comparáveis, apresente os dois totais,
-    as fontes e as datas disponíveis e depois responda quem marcou mais.
-11. Se não houver dados suficientes para um ou ambos os jogadores,
-    explique especificamente qual informação está faltando.
+        "comparacao": """
+Compare os jogadores mencionados usando as evidências fornecidas.
 
-Formato obrigatório:
-Pelé: número confirmado ou "não foi possível confirmar".
-Messi: número confirmado ou "não foi possível confirmar".
-Conclusão: comparação sustentada pelas fontes ou limitação encontrada.
+REGRAS:
+1. Identifique todos os jogadores da pergunta original.
+2. Procure os números explicitamente presentes nas evidências de cada jogador.
+3. Não diga que faltam dados se houver números relevantes no contexto.
+4. Diferencie:
+   - gols por clubes;
+   - gols pela seleção principal;
+   - total geral da carreira.
+5. Em tabelas de clubes, a linha "Total" representa o total
+   indicado por aquela tabela. Não a descarte por não conter
+   a expressão "gols oficiais na carreira".
+6. Em tabelas da seleção, identifique separadamente os jogos
+   e gols pela seleção principal.
+7. Não confunda o total de gols por clubes com o total da carreira.
+8. Não some categorias se houver risco de sobreposição ou se
+   os critérios e períodos não forem compatíveis.
+9. Informe a fonte e o contexto de cada número.
+10. Se houver números de datas diferentes, informe essa limitação
+    quando a data estiver disponível.
+11. Se os critérios não puderem ser confirmados, apresente os
+    números separados e explique o que ainda precisa ser verificado.
+12. Não invente números, datas ou critérios.
 
-Não responda somente com um número isolado.
-Não declare um vencedor sem evidências suficientes.
+FORMATO:
+- Nome do jogador.
+- Gols por clubes, se disponíveis.
+- Gols pela seleção principal, se disponíveis.
+- Total geral, somente se estiver explicitamente informado ou
+  puder ser calculado sem sobreposição e com critérios compatíveis.
+- Fonte de cada informação.
+- Conclusão comparativa, somente quando os números forem comparáveis.
+
+Se houver dados parciais, apresente-os. Não transforme uma
+limitação sobre o total geral em uma afirmação de que nenhuma
+estatística está disponível.
 """,
-    "divergencia": """
-A pergunta procura explicar números estatísticos divergentes.
 
-- Apresente os números encontrados e suas fontes.
-- Explique os critérios diferentes somente quando documentados.
-- Não declare um número universalmente correto sem evidências.
-- Diferencie gols oficiais, amistosos e outras categorias
-  apenas quando as fontes permitirem essa distinção.
+        "divergencia": """
+A pergunta procura explicar diferenças entre números estatísticos.
+
+- Apresente cada valor e sua respectiva fonte.
+- Explique os critérios de contagem somente quando documentados.
+- Diferencie gols oficiais e totais gerais quando as fontes permitirem.
+- Não declare um único total universalmente correto sem evidências.
+- Não invente explicações ou números ausentes.
 """
-}
+    }
 
     if intencao_estatistica:
         prompt_sistema += (
-            "\\n\\nINSTRUÇÕES ESPECÍFICAS PARA A INTENÇÃO "
-            f"{intencao_estatistica.upper()}:\\n"
+            "\n\nINSTRUÇÕES ESPECÍFICAS PARA A INTENÇÃO "
+            f"{intencao_estatistica.upper()}:\n"
             + instrucoes_por_intencao[intencao_estatistica]
         )
 
@@ -2465,22 +2458,34 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
         "qual numero de gols esta certo",
         "qual contagem esta correta",
         "qual total esta correto",
+        "por que ha diferenca",
+        "por que os totais sao diferentes",
     ]
 
     termos_comparacao = [
         "quem marcou mais",
         "quem fez mais gols",
         "quem tem mais gols",
+        "quem marcou mais gols",
+        "quem fez mais",
         "marcou mais gols",
         "fez mais gols",
         "maior artilheiro",
         "maiores artilheiros",
         "comparar os gols",
         "comparacao de gols",
-        "sao os maiores artilheiros",
+        "comparacao entre",
+        "compare os gols",
+        "compare os jogadores",
+        "comparar jogadores",
+        "comparar a quantidade de gols",
         "quem e o maior goleador",
-        "pelé ou messi",
-        "pele ou messi",
+        "quem tem mais gols oficiais",
+        "qual dos jogadores marcou mais",
+        "qual jogador marcou mais",
+        "qual jogador fez mais gols",
+        "qual deles tem mais gols",
+        "sao os maiores artilheiros",
     ]
 
     termos_quantidade = [
@@ -2499,6 +2504,9 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
         "marcou na carreira",
         "quantidade de gols",
         "total marcado",
+        "quantos gols oficiais",
+        "quantos gols na carreira",
+        "total de gols oficiais",
     ]
 
     if any(termo in texto for termo in termos_divergencia):
@@ -2511,6 +2519,78 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
         return "quantidade"
 
     return None
+
+def extrair_totais_gols_comparacao(resultados: list) -> dict:
+    """
+    Organiza fontes e extrai totais de gols por clubes
+    quando a tabela identifica explicitamente Jogos e Gols.
+    """
+    dados = {}
+
+    for resultado in resultados:
+        jogador = (
+            resultado.get("jogador_pesquisado") or ""
+        ).strip()
+        titulo = resultado.get("titulo", "")
+        url = resultado.get("url", "")
+        conteudo = resultado.get("conteudo", "")
+
+        if not jogador or not conteudo:
+            continue
+
+        chave = jogador.casefold()
+
+        if chave not in dados:
+            dados[chave] = {
+                "jogador": jogador,
+                "fontes": [],
+                "totais_clubes": [],
+            }
+
+        dados[chave]["fontes"].append({
+            "titulo": titulo,
+            "url": url,
+            "conteudo": conteudo,
+        })
+
+        # Localiza especificamente a tabela de clubes profissionais.
+        cabecalho = re.search(
+            r"Período\s*\|\s*Clube\s*\|\s*Jogos\s*\|\s*Gol\(o\)s",
+            conteudo,
+            re.IGNORECASE,
+        )
+
+        if not cabecalho:
+            continue
+
+        # Recorta a tabela antes da seção seguinte.
+        inicio = cabecalho.start()
+        fim = conteudo.find("| Seleção", cabecalho.end())
+
+        if fim == -1:
+            fim = len(conteudo)
+
+        tabela_clubes = conteudo[inicio:fim]
+
+        # Extrai somente o total dentro da tabela de clubes.
+        total = re.search(
+            r"\|\s*Total\s*\|\s*(\d+)\s*\|\s*(\d+)\s*\|",
+            tabela_clubes,
+            re.IGNORECASE,
+        )
+
+        if total:
+            jogos = int(total.group(1))
+            gols = int(total.group(2))
+
+            dados[chave]["totais_clubes"].append({
+                "jogos": jogos,
+                "gols": gols,
+                "titulo": titulo,
+                "url": url,
+            })
+
+    return dados
 
 @app.post("/api/chat")
 async def conversar(pergunta: Pergunta):
@@ -3034,9 +3114,21 @@ async def conversar(pergunta: Pergunta):
         return {
             "response": resposta
         }
-        
-    if conhecimento is not None:
 
+    intencao_estatistica = identificar_intencao_estatistica(
+        pergunta.pergunta
+    )
+
+    print("PERGUNTA:", pergunta.pergunta)
+    print("INTENÇÃO:", intencao_estatistica)
+
+    eh_pergunta_estatistica = intencao_estatistica in {
+        "quantidade",
+        "comparacao",
+        "divergencia",
+    }
+        
+    if conhecimento is not None and not eh_pergunta_estatistica:
         return {
             "response": conhecimento.strip()
         }
@@ -3045,12 +3137,22 @@ async def conversar(pergunta: Pergunta):
         pergunta.pergunta
     )
 
-    if conhecimento_historico is not None:
+    if conhecimento_historico is not None and not eh_pergunta_estatistica:
         return {
             "response": conhecimento_historico["resposta"]
         }
 
     resultados_pesquisa = await pesquisar_na_web(pergunta.pergunta)
+
+    dados_comparacao = extrair_totais_gols_comparacao(
+        resultados_pesquisa
+    )
+
+    print("\n=== TOTAIS EXTRAÍDOS ===")
+    print(dados_comparacao)
+    print("=== FIM DOS TOTAIS ===\n")
+
+    print("RESULTADOS DA WEB:", len(resultados_pesquisa))
 
     if resultados_pesquisa:
         contexto_web = formatar_resultados_pesquisa(
@@ -3058,9 +3160,16 @@ async def conversar(pergunta: Pergunta):
             pergunta.pergunta
         )
 
+        print("\n=== EVIDÊNCIAS ORGANIZADAS ===")
+        print(contexto_web)
+        print("=== FIM DAS EVIDÊNCIAS ===\n")
+
         intencao_estatistica = identificar_intencao_estatistica(
             pergunta.pergunta
         )
+
+        print("PERGUNTA:", pergunta.pergunta)
+        print("INTENÇÃO:", intencao_estatistica)
 
         instrucoes_estatisticas = {
             "quantidade": """
@@ -3109,8 +3218,10 @@ async def conversar(pergunta: Pergunta):
             para concluir a comparação.
 
         Formato da resposta:
-        - Pelé: total encontrado, critério, data e fonte, se disponíveis.
-        - Messi: total encontrado, critério, data e fonte, se disponíveis.
+        - Primeiro jogador citado: total encontrado, critério, data e fonte,
+          se disponíveis.
+        - Segundo jogador citado: total encontrado, critério, data e fonte,
+          se disponíveis.
         - Conclusão: comparação direta ou explicação objetiva da limitação.
 
         Não responda apenas com um número isolado.
@@ -3140,60 +3251,99 @@ async def conversar(pergunta: Pergunta):
     """
         }
 
-        if intencao_estatistica in instrucoes_estatisticas:
+        if intencao_estatistica == "comparacao":
             contexto_web = f"""
-    PERGUNTA ORIGINAL:
-    {pergunta.pergunta}
+        Você é o assistente Camisa10, especializado em futebol.
 
-    TIPO DE PERGUNTA:
-    {intencao_estatistica}
+        Responda à pergunta utilizando as evidências fornecidas.
+        Analise cada jogador separadamente antes de comparar os números.
 
-    INSTRUÇÕES ESPECÍFICAS:
-    {instrucoes_estatisticas[intencao_estatistica]}
+        REGRAS:
+        1. Identifique os dois jogadores citados na pergunta original.
+        2. Identifique exatamente a estatística solicitada.
+        3. Se a pergunta mencionar gols oficiais, não use totais que
+           incluam amistosos ou partidas não oficiais.
+        4. Considere clubes e seleção principal somente quando as fontes
+           permitirem identificar esses totais de maneira consistente.
+        5. Não confunda estatísticas de uma temporada, de uma competição
+           ou de um único clube com o total da carreira.
+        6. Não misture números calculados com critérios diferentes.
+        7. Não invente números nem complete informações ausentes por suposição.
+        8. Se as fontes divergirem, explique brevemente a diferença e
+           identifique as fontes.
+        9. Só declare quem tem mais gols se houver dados comparáveis
+           para os dois jogadores.
+        10. Se houver evidência para apenas um jogador, apresente o dado
+            encontrado e explique objetivamente o que falta para comparar.
+        11. Não mencione outros jogadores além dos dois solicitados.
+        12. Responda em português brasileiro, de forma objetiva.
+        
+        13. Utilize somente informações diretamente relacionadas à
+            estatística solicitada na pergunta.
+        14. Não transforme dados de tabelas diferentes em uma única
+            tabela comparativa, a menos que os critérios sejam iguais.
+        15. Não apresente jogos, gols, assistências, temporadas,
+            estreias, prêmios ou duração de carreira se esses dados
+            não forem necessários para responder à pergunta.
+        16. Antes de apresentar um número, identifique a fonte,
+            o período e o escopo estatístico a que ele se refere.
+        17. Não atribua um número a um jogador se a evidência não
+            deixar claro que aquele número pertence a ele.
+        18. Se as fontes apresentarem somente estatísticas de temporadas
+            ou competições específicas, não as apresente como totais
+            da carreira.
+        19. Se não houver dois totais comparáveis de gols oficiais,
+            não declare qual jogador marcou mais. Explique brevemente
+            qual informação está faltando.
+        20. Nunca preencha lacunas com suposições, mesmo que isso
+            produza uma resposta mais completa.
+        21. Responda somente à pergunta feita. Para uma comparação de
+            gols, limite a resposta aos gols, aos critérios de contagem,
+            às fontes e à conclusão.
+        22. Um número pode aparecer em uma fonte sem representar o total
+            solicitado. Verifique o contexto imediato antes de utilizá-lo.
+        23. Não apresente gols marcados sob o comando de um treinador,
+            em uma temporada ou em uma competição como total da carreira.
+        24. Não some gols por clubes e pela seleção se os períodos de
+            atualização forem diferentes ou se houver risco de sobreposição.
+        25. Não trate a quantidade de jogos como evidência da quantidade
+            de gols oficiais.
+        26. Se os trechos não confirmarem explicitamente dois totais
+            comparáveis de gols oficiais, não apresente números parciais
+            como se fossem esses totais.
+        27. Nesse caso, informe que as fontes encontradas não permitem
+            concluir a comparação e identifique quais dados faltam.
 
-    DADOS ENCONTRADOS NA PESQUISA:
-    {contexto_web}
-    """
 
-        print("\n=== CONTEXTO ENVIADO AO OLLAMA ===")
-        print(contexto_web)
-        print("=== FIM DO CONTEXTO ===\n")
 
+        PERGUNTA:
+        {pergunta.pergunta}
+
+        EVIDÊNCIAS ORGANIZADAS:
+        {contexto_web}
+
+        """
+
+        elif intencao_estatistica in instrucoes_estatisticas:
+            contexto_web = f"""
+        PERGUNTA:
+        {pergunta.pergunta}
+
+        INSTRUÇÕES:
+        {instrucoes_estatisticas[intencao_estatistica]}
+
+        DADOS DA PESQUISA:
+        {contexto_web}
+        """
+            
         resposta = gerar_resposta_ollama(
             pergunta.pergunta,
             contexto_web
         )
 
-        print("\n=== RESPOSTA ORIGINAL DO OLLAMA ===")
-        print(resposta)
-        print("=== FIM DA RESPOSTA ORIGINAL ===\n")
-   
     if intencao_estatistica == "comparacao":
-        jogadores_esperados = []
-
         pergunta_normalizada = pergunta.pergunta.lower()
-
-        if "pelé" in pergunta_normalizada or "pele" in pergunta_normalizada:
-            jogadores_esperados.append("Pelé")
-
-        if "messi" in pergunta_normalizada:
-            jogadores_esperados.append("Messi")
-
-        resposta_normalizada = resposta.lower()
-
-        menciona_todos = all(
-            jogador.lower() in resposta_normalizada
-            for jogador in jogadores_esperados
-        )
-
-        if not menciona_todos:
-            resposta = (
-                "Não foi possível concluir a comparação com segurança. "
-                "A resposta gerada não apresentou todos os jogadores "
-                "solicitados. Consulte as fontes para verificar os totais "
-                "e os critérios de contagem."
-            )
-
+        
         fontes = "\n\nFontes consultadas:\n" + "\n".join(
             f"- [{item.get('jogador_pesquisado') or 'Geral'}]"
             f"{item['titulo']}: {item['url']}"
