@@ -1,4 +1,3 @@
-from time import time
 from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -6,12 +5,14 @@ import ollama
 from backend.services.football_api import (buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
-from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica)
+from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica, COMPETICOES, identificar_competicao_pergunta)
+from fastapi.concurrency import run_in_threadpool
 import requests
 import re
+import json
 
 app = FastAPI()
 
@@ -1834,6 +1835,7 @@ def gerar_resposta_ollama(pergunta, dados):
 
     intencao_estatistica = identificar_intencao_estatistica(pergunta)
     pergunta_estatistica = intencao_estatistica is not None
+    escopo_estatistico = identificar_escopo_estatistico(pergunta)
 
     # Aceita tanto o contexto em texto quanto o dicionário.
     if isinstance(dados, dict):
@@ -1844,6 +1846,60 @@ def gerar_resposta_ollama(pergunta, dados):
         conceito = "Não se aplica"
 
     contexto = str(contexto)
+
+    instrucoes_escopo = {
+        "equipe": """
+RECORTE OBRIGATÓRIO: CLUBE OU EQUIPE.
+
+- Considere somente os gols marcados pelos jogadores pelo clube
+  ou equipe mencionados na pergunta.
+- Não use o total da carreira, os gols pela seleção ou os gols
+  por outros clubes como resposta.
+- Diferencie o total histórico pelo clube de recortes como
+  Brasileirão, Libertadores ou século XXI.
+- Não apresente números de um recorte específico como se fossem
+  o total histórico pelo clube.
+- Se as fontes apresentarem apenas recortes específicos, informe
+  esses números e deixe claro que não representam o total pelo clube.
+""",
+        "competicao": """
+RECORTE OBRIGATÓRIO: COMPETIÇÃO.
+
+- Considere somente os gols marcados na competição solicitada.
+- Não use o total da carreira nem os gols por clubes como resposta.
+- Confira se os números se referem à mesma competição e ao mesmo
+  critério de contagem.
+- Se houver apenas totais da carreira, não os apresente como
+  números da competição.
+""",
+        "carreira": """
+RECORTE OBRIGATÓRIO: CARREIRA.
+
+- Considere os números relativos à carreira completa dos jogadores.
+- Diferencie gols por clubes, pela seleção principal e total geral.
+- Não use números limitados a um clube, competição ou período
+  como se fossem totais da carreira.
+- Só calcule um total quando as categorias forem compatíveis
+  e não houver sobreposição.
+""",
+        "selecao": """
+RECORTE OBRIGATÓRIO: SELEÇÃO.
+
+- Considere somente os gols pela seleção solicitada.
+- Não use gols por clubes ou totais da carreira como resposta.
+- Identifique a seleção e o critério de contagem das fontes.
+""",
+        "temporada": """
+RECORTE OBRIGATÓRIO: TEMPORADA.
+
+- Considere somente os gols da temporada solicitada.
+- Não use totais da carreira ou de outras temporadas como resposta.
+- Verifique se as fontes usam o mesmo período e critério.
+"""
+    }
+
+    tipo_escopo = escopo_estatistico.get("tipo", "")
+    instrucoes_escopo = instrucoes_escopo.get(tipo_escopo, "")
 
     if pergunta_estatistica:
         prompt_sistema = """
@@ -1902,43 +1958,49 @@ A pergunta pede a quantidade de gols de um jogador.
 """,
 
         "comparacao": """
-Compare os jogadores mencionados usando as evidências fornecidas.
+Você deve responder exclusivamente à pergunta original, usando as evidências fornecidas.
 
-REGRAS:
-1. Identifique todos os jogadores da pergunta original.
-2. Procure os números explicitamente presentes nas evidências de cada jogador.
-3. Não diga que faltam dados se houver números relevantes no contexto.
-4. Diferencie:
-   - gols por clubes;
-   - gols pela seleção principal;
-   - total geral da carreira.
-5. Em tabelas de clubes, a linha "Total" representa o total
-   indicado por aquela tabela. Não a descarte por não conter
-   a expressão "gols oficiais na carreira".
-6. Em tabelas da seleção, identifique separadamente os jogos
-   e gols pela seleção principal.
-7. Não confunda o total de gols por clubes com o total da carreira.
-8. Não some categorias se houver risco de sobreposição ou se
-   os critérios e períodos não forem compatíveis.
-9. Informe a fonte e o contexto de cada número.
-10. Se houver números de datas diferentes, informe essa limitação
-    quando a data estiver disponível.
-11. Se os critérios não puderem ser confirmados, apresente os
-    números separados e explique o que ainda precisa ser verificado.
-12. Não invente números, datas ou critérios.
+ETAPA 1 — IDENTIFICAR O RECORTE
+Determine se a pergunta trata de clube, competição, seleção, temporada ou carreira.
+Respeite o escopo identificado pelo sistema.
 
-FORMATO:
-- Nome do jogador.
-- Gols por clubes, se disponíveis.
-- Gols pela seleção principal, se disponíveis.
-- Total geral, somente se estiver explicitamente informado ou
-  puder ser calculado sem sobreposição e com critérios compatíveis.
-- Fonte de cada informação.
-- Conclusão comparativa, somente quando os números forem comparáveis.
+ETAPA 2 — CONFERIR CADA ESTATÍSTICA
+Para cada número utilizado, identifique:
+- jogador;
+- quantidade de gols;
+- clube ou seleção;
+- competição, quando aplicável;
+- período;
+- fonte.
 
-Se houver dados parciais, apresente-os. Não transforme uma
-limitação sobre o total geral em uma afirmação de que nenhuma
-estatística está disponível.
+Não atribua números a jogadores diferentes dos identificados na fonte.
+
+ETAPA 3 — COMPARAR
+Compare os jogadores somente quando os números se referirem
+ao mesmo tipo de estatística e a critérios compatíveis.
+
+Para perguntas sobre gols pelo São Paulo:
+- Não confunda gols pelo clube com gols na Libertadores.
+- Não confunda gols no Brasileirão com o total pelo clube.
+- Não apresente gols do século XXI como total histórico.
+- Não confunda jogos com gols.
+- Não calcule médias sem dados compatíveis de jogos e gols.
+
+ETAPA 4 — LIDAR COM DADOS INSUFICIENTES
+Se houver apenas números parciais, apresente-os com seus recortes.
+Não declare um vencedor no total histórico se esse total não estiver
+confirmado para os dois jogadores.
+Não invente dados para completar a comparação.
+
+ETAPA 5 — FORMATO DA RESPOSTA
+Responda em português brasileiro, de forma natural e objetiva.
+Responda somente à pergunta original.
+Apresente os números relevantes, seus recortes e as fontes.
+Se não for possível concluir a comparação solicitada, explique
+exatamente qual informação está faltando.
+
+Não crie uma lista de perguntas e respostas.
+Não invente estatísticas, fontes ou conclusões.
 """,
 
         "divergencia": """
@@ -1972,11 +2034,28 @@ A pergunta procura explicar diferenças entre números estatísticos.
 Pergunta do usuário:
 {pergunta}
 
+Escopo estatístico identificado pelo sistema:
+{tipo_escopo}
+
+Instruções obrigatórias para esse escopo:
+{instrucoes_escopo}
+
 Conceito identificado pelo sistema:
 {conceito}
 
 Dados e contexto disponíveis:
 {contexto}
+
+Procedimento obrigatório:
+1. Separe mentalmente as evidências por jogador e recorte estatístico.
+2. Desconsidere como resposta direta números de recortes
+   diferentes do solicitado.
+3. Antes de concluir, verifique se há um total comparável
+   para cada jogador.
+4. Se houver apenas dados parciais, apresente-os separadamente
+   e não os transforme em totais históricos.
+5. Não use a ausência de dados em uma categoria para descartar
+   estatísticas válidas de outras categorias.
 
 Instruções finais:
 - Responda à pergunta original, não apenas ao número mais destacado.
@@ -2535,15 +2614,15 @@ def extrair_totais_gols_comparacao(resultados: list) -> dict:
     dados = {}
 
     for resultado in resultados:
-        jogador = (
-            resultado.get("jogador_pesquisado") or ""
-        ).strip()
-
+        jogador = (resultado.get("jogador_pesquisado") or "").strip()
         titulo = resultado.get("titulo", "")
         url = resultado.get("url", "")
-        conteudo = resultado.get("conteudo", "")
+        conteudo = (
+            resultado.get("conteudo_completo")
+            or resultado.get("conteudo", "")
+        )
 
-        if not jogador or not conteudo:
+        if not jogador or jogador == "__comparacao__" or not conteudo:
             continue
 
         datas_atualizacao = extrair_datas_atualizacao_site(
@@ -2703,9 +2782,9 @@ def extrair_gols_clubes_principais(conteudo: str):
     """Extrai jogos e gols de clubes principais, excluindo equipes B."""
 
     inicio = re.search(
-        r"\|\s*Profissional\s*\d*\s*\|",
+        r"^\s*\|?\s*\**Profissional\**\s*\|?\s*$",
         conteudo,
-        re.IGNORECASE
+        re.IGNORECASE | re.MULTILINE
     )
 
     if not inicio:
@@ -2714,28 +2793,37 @@ def extrair_gols_clubes_principais(conteudo: str):
     trecho = conteudo[inicio.end():]
 
     fim = re.search(
-        r"\|\s*Seleção\s*\d*\s*\|",
+        r"^\s*\|?\s*\**Seleção\**\s*\|?\s*$",
         trecho,
-        re.IGNORECASE
+        re.IGNORECASE | re.MULTILINE
     )
 
     if fim:
         trecho = trecho[:fim.start()]
 
-    padrao = re.compile(
-        r"\|\s*(\d{4}\s*[–—-]\s*(?:\d{4})?|\d{4})\s*\|"
-        r"\s*([^|]+?)\s*\|"
-        r"\s*(\d+)\s*\|"
-        r"\s*(\d+)\s*\|",
-        re.IGNORECASE
-    )
-
     jogos_total = 0
     gols_total = 0
     linhas_encontradas = 0
 
-    for periodo, clube, jogos, gols in padrao.findall(trecho):
-        clube = clube.strip()
+    for linha in trecho.splitlines():
+        if "|" not in linha:
+            continue
+
+        celulas = [
+            c.strip().strip("*").strip()
+            for c in linha.strip().strip("|").split("|")
+        ]
+
+        if len(celulas) < 4:
+            continue
+
+        periodo, clube, jogos_txt, gols_txt = celulas[:4]
+
+        if re.search(r"\btotal\b", f"{periodo} {clube}", re.IGNORECASE):
+            continue  
+
+        if not jogos_txt.isdigit() or not gols_txt.isdigit():
+            continue
 
         if re.search(
             r"\b(?:B|II|Castilla|reserve|reservas|"
@@ -2745,8 +2833,8 @@ def extrair_gols_clubes_principais(conteudo: str):
         ):
             continue
 
-        jogos_total += int(jogos)
-        gols_total += int(gols)
+        jogos_total += int(jogos_txt)
+        gols_total += int(gols_txt)
         linhas_encontradas += 1
 
     if linhas_encontradas == 0:
@@ -2760,12 +2848,12 @@ def extrair_gols_clubes_principais(conteudo: str):
 
 
 def extrair_gols_selecao_principal(conteudo: str) -> dict | None:
-    """Extrai jogos e gols da tabela da seleção principal."""
+    """Extrai jogos e gols da linha de total da seleção principal."""
 
     inicio = re.search(
-        r"####\s*\*{0,2}Principal\b",
+        r"^\s*#{1,6}\s*\**\s*Principal\b.*$",
         conteudo,
-        re.IGNORECASE
+        re.IGNORECASE | re.MULTILINE
     )
 
     if not inicio:
@@ -2780,36 +2868,279 @@ def extrair_gols_selecao_principal(conteudo: str) -> dict | None:
 
     trecho = conteudo[inicio.end():]
 
-    total = re.search(
-        r"\|\s*Total na carreira\s*\|([^\n]*)",
-        trecho,
-        re.IGNORECASE
+    for linha in trecho.splitlines():
+        if "|" not in linha:
+            continue
+
+        celulas = [
+            c.strip().strip("*").strip()
+            for c in linha.strip().strip("|").split("|")
+        ]
+
+        if not celulas:
+            continue
+
+        rotulo = celulas[0].casefold()
+
+        if "total na carreira" not in rotulo:
+            continue
+
+        numeros = [
+            int(c)
+            for c in celulas[1:]
+            if c.isdigit()
+        ]
+
+        if len(numeros) < 2:
+            continue
+
+        return {
+            "jogos": numeros[0],
+            "gols": numeros[1]
+        }
+
+    return None
+
+def normalizar_para_busca(texto: str) -> str:
+    texto = unicodedata.normalize("NFKC", texto)
+    texto = unicodedata.normalize("NFD", texto)
+
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if unicodedata.category(caractere) != "Mn"
     )
 
-    if not total:
-        return None
+    return re.sub(r"\s+", " ", texto).strip().casefold()
 
-    celulas = [
-        valor.strip()
-        for valor in total.group(1).split("|")
-        if valor.strip()
+JANELA_CONTEXTO = 600
+JANELA_ESCOPO_ESTREITA = 120
+
+ALIASES_JOGADORES = {
+    "pele": ["pele", "edson arantes do nascimento"],
+    "cristiano ronaldo": ["cristiano ronaldo", "cr7"],
+}
+
+
+def variantes_nome(jogador: str) -> list:
+    base = normalizar_para_busca(jogador)
+    return ALIASES_JOGADORES.get(base, [base])
+
+
+def _regex_nome(jogador: str) -> str:
+    nomes = "|".join(re.escape(n) for n in variantes_nome(jogador))
+    return rf"\b(?:{nomes})\b"
+
+
+def extrair_candidatos_gols(texto: str, jogador: str, outros_jogadores: list) -> list:
+    """
+    Retorna [(gols, inicio, fim)] apenas quando o número está ligado
+    explicitamente ao jogador. `texto` já deve estar normalizado.
+    """
+    nome = _regex_nome(jogador)
+    num = r"(\d{1,3}(?:\.\d{3})+|\d+)"
+    outros = [n for o in outros_jogadores for n in variantes_nome(o)]
+
+    # (padrão, verificar_nome_de_outro_antes)
+    padroes = [
+        (rf"{nome}\s*[-–—:]\s*{num}\s*gols?\b", False),
+        (rf"{nome}\s*\(\s*{num}\s*gols?\s*\)", False),
+        (rf"{num}\s+gols?\s+(?:de|do|da|por)\s+{nome}", False),
+        (
+            rf"{nome}(?:(?! e | ou |,|\.|;).){{0,50}}?"
+            rf"(?:marcou|fez|anotou|somou|tem)\s+{num}\s+gols?\b",
+            True,
+        ),
     ]
 
-    numeros = [
-        int(valor)
-        for valor in celulas
-        if valor.isdigit()
-    ]
+    candidatos, vistos = [], set()
 
-    if len(numeros) < 3:
-        return None
+    for padrao, verificar_antes in padroes:
+        for m in re.finditer(padrao, texto):
+            trecho = m.group(0)
 
-    jogos, gols, assistencias = numeros[-3:]
+            if any(re.search(rf"\b{re.escape(o)}\b", trecho) for o in outros):
+                continue
 
-    return {
-        "jogos": jogos,
-        "gols": gols
-    }
+            if verificar_antes:
+                antes = re.split(
+                    r"[.;|\n]", texto[max(0, m.start() - 40):m.start()]
+                )[-1]
+                if any(re.search(rf"\b{re.escape(o)}\b", antes) for o in outros):
+                    continue
+
+            gols = int(m.group(1).replace(".", ""))
+            if (gols, m.start()) in vistos:
+                continue
+            vistos.add((gols, m.start()))
+            candidatos.append((gols, m.start(), m.end()))
+
+    return candidatos
+
+
+def competicao_mais_proxima(texto: str, inicio: int, fim: int) -> str | None:
+    ini = max(0, inicio - JANELA_CONTEXTO)
+    fi = min(len(texto), fim + 150)
+    melhor_chave, melhor_dist = None, None
+
+    for chave, info in COMPETICOES.items():
+        for termo in info["termos"]:
+            for m in re.finditer(re.escape(termo), texto[ini:fi]):
+                s, e = ini + m.start(), ini + m.end()
+                dist = max(inicio - e, s - fim, 0)
+                if melhor_dist is None or dist < melhor_dist:
+                    melhor_chave, melhor_dist = chave, dist
+
+    return melhor_chave
+
+def competicao_perto(texto: str, inicio: int, fim: int, competicao: str, raio: int = 150) -> bool:
+    trecho = texto[max(0, inicio - raio): fim + raio]
+    return any(t in trecho for t in COMPETICOES[competicao]["termos"])
+
+def candidato_no_recorte(
+    texto: str, inicio: int, fim: int,
+    equipe_norm: str, competicao: str | None, tipo_escopo: str,
+) -> bool:
+    ini = max(0, inicio - JANELA_CONTEXTO)
+    fi = min(len(texto), fim + 150)
+
+    if equipe_norm and equipe_norm not in texto[ini:fi]:
+        return False
+
+    perto = texto[max(0, inicio - JANELA_ESCOPO_ESTREITA): fim + JANELA_ESCOPO_ESTREITA]
+    if re.search(r"\b(?:selecao|temporada)\b", perto):
+        return False
+
+    proxima = competicao_mais_proxima(texto, inicio, fim)
+
+    if tipo_escopo == "competicao":
+        return (
+            proxima == competicao
+            and competicao_perto(texto, inicio, fim, competicao)
+        )
+
+    # Total pelo clube: não pode ser número de uma competição específica.
+    return proxima is None
+
+
+def montar_resposta_comparacao_gols_equipe(
+    equipe: str | None,
+    jogadores: list,
+    resultados_pesquisa: list,
+    pergunta: str = "",
+    tipo_escopo: str = "equipe",
+) -> str:
+    competicao = identificar_competicao_pergunta(pergunta)
+    equipe_norm = normalizar_para_busca(equipe) if equipe else ""
+
+    if tipo_escopo == "competicao":
+        if competicao is None:
+            return (
+                "A pergunta se refere a uma competição que ainda não sei validar "
+                "automaticamente. Para não misturar recortes, prefiro não comparar."
+            )
+        recorte = COMPETICOES[competicao]["consulta"]
+        if equipe:
+            recorte += f" ({equipe})"
+    else:
+        recorte = f"total pelo {equipe}"
+
+    encontrados = {j: {} for j in jogadores}
+
+    for resultado in resultados_pesquisa:
+        bruto = " . ".join([
+            resultado.get("titulo", ""),
+            resultado.get("conteudo_completo") or resultado.get("conteudo", ""),
+        ])
+        texto = normalizar_para_busca(bruto)
+
+        texto_sem_links = re.sub(
+            r"\[[^\]]*\]\([^)]*\)",
+            lambda m: " " * len(m.group(0)),
+            texto,
+        )
+
+        for jogador in jogadores:
+            outros = [j for j in jogadores if j != jogador]
+
+            for gols, ini, fim in extrair_candidatos_gols(texto, jogador, outros):
+                if not candidato_no_recorte(
+                    texto_sem_links, ini, fim, equipe_norm, competicao, tipo_escopo
+                ):
+                    continue
+
+                print(
+                    "CANDIDATO:", jogador, gols, resultado.get("url", ""),
+                    "|", texto[max(0, ini - 80): fim + 80],
+                )
+
+                url = resultado.get("url", "")
+                encontrados[jogador].setdefault(
+                    (gols, url),
+                    {
+                        "gols": gols,
+                        "titulo": resultado.get("titulo") or "Fonte sem título",
+                        "url": url,
+                    },
+                )
+
+    linhas = [f"Recorte solicitado: {recorte}."]
+    totais = {}
+
+    for jogador in jogadores:
+        itens = list(encontrados[jogador].values())
+        valores = sorted({i["gols"] for i in itens})
+
+        if not valores:
+            linhas.append(
+                f"- {jogador}: não encontrei um número explícito de gols nesse recorte."
+            )
+        elif len(valores) > 1:
+            detalhe = "; ".join(
+                f"{i['gols']} gols ({i['titulo']}: {i['url']})" for i in itens
+            )
+            linhas.append(f"- {jogador}: as fontes divergem — {detalhe}.")
+        else:
+            i = itens[0]
+            totais[jogador] = valores[0]
+            linhas.append(
+                f"- {jogador}: {valores[0]} gols (fonte: {i['titulo']} — {i['url']})."
+            )
+
+    g1, g2 = totais.get(jogadores[0]), totais.get(jogadores[1])
+
+    if g1 is not None and g2 is not None:
+        if g1 == g2:
+            linhas.append(f"\nResultado: empate, com {g1} gols cada.")
+        elif g1 > g2:
+            linhas.append(
+                f"\nResultado: {jogadores[0]} marcou mais ({g1} contra {g2}; "
+                f"diferença de {g1 - g2})."
+            )
+        else:
+            linhas.append(
+                f"\nResultado: {jogadores[1]} marcou mais ({g2} contra {g1}; "
+                f"diferença de {g2 - g1})."
+            )
+        linhas.append(
+            "Observação: os números seguem o critério de contagem de cada fonte "
+            "(por exemplo, quais edições históricas entram em cada competição)."
+        )
+    else:
+        linhas.append(
+            "\nNão há números comparáveis e confirmados para os dois jogadores "
+            "nesse recorte, então não vou declarar quem marcou mais."
+        )
+        urls = list(dict.fromkeys(
+            r["url"] for r in resultados_pesquisa if r.get("url")
+        ))[:5]
+        if urls:
+            linhas.append(
+                "Fontes pesquisadas, sem números comparáveis no recorte:\n"
+                + "\n".join(f"- {u}" for u in urls)
+            )
+
+    return "\n".join(linhas)
 
 def montar_totais_carreira(
     gols_clubes: int | None,
@@ -3098,9 +3429,7 @@ def montar_resposta_comparacao_gols_clubes(
     dados: dict,
     jogadores_solicitados: list
 ) -> str:
-    linhas = [
-        "Comparei os gols pelos clubes principais e pela seleção principal."
-    ]
+    linhas = []
 
     totais_encontrados = []
 
@@ -3238,6 +3567,11 @@ def montar_resposta_comparacao_gols_clubes(
                 )
 
     if len(totais_encontrados) == 2:
+        linhas.insert(
+            0,
+            "Comparei os gols pelos clubes principais e pela seleção principal."
+        )
+
         diferenca = abs(
             totais_encontrados[0]["gols"]
             - totais_encontrados[1]["gols"]
@@ -3261,6 +3595,12 @@ def montar_resposta_comparacao_gols_clubes(
             f"**Atualidade - seleção principal:** "
             f"{validacao['selecao']['mensagem']}"
         )
+    else:
+        linhas.insert(
+            0,
+            "Não consegui confirmar o total de carreira dos dois jogadores "
+            "com as fontes obtidas, então não vou declarar quem marcou mais."
+        )
 
     linhas.append(
         "\n**Limitações:** a comparação considera clubes "
@@ -3272,6 +3612,406 @@ def montar_resposta_comparacao_gols_clubes(
 
     return "\n".join(linhas)
 
+def extrair_totais_carreira_tabela(conteudo: str, jogadores: list) -> dict | None:
+    """
+    Lê tabelas markdown com os dois jogadores nas colunas, por exemplo:
+    | Category | Messi | vs | Ronaldo | Winner |
+    | Total Career Goals | 936 | vs | 982 | Ronaldo +46 |
+    Só retorna valores se o cabeçalho confirmar a coluna de cada jogador.
+    """
+    completos = [normalizar_para_busca(j) for j in jogadores]
+    chaves = [c.split()[-1] for c in completos]
+
+    if len(set(chaves)) < 2:
+        return None
+
+    rotulos = (
+        "total career goals",
+        "gols na carreira",
+        "total de gols na carreira",
+    )
+
+    colunas = None
+
+    for linha in conteudo.splitlines():
+        if "|" not in linha:
+            continue
+
+        celulas = [
+            c.strip().strip("*").strip()
+            for c in linha.strip().strip("|").split("|")
+        ]
+        norm = [normalizar_para_busca(c) for c in celulas]
+
+        # 1) Procura o cabeçalho com os dois jogadores.
+        if colunas is None:
+            achadas = [
+                next(
+                    (i for i, c in enumerate(norm) if c in (chave, completo)),
+                    None,
+                )
+                for chave, completo in zip(chaves, completos)
+            ]
+            if None not in achadas:
+                colunas = achadas
+            continue
+
+        # 2) Depois do cabeçalho, procura a linha de gols na carreira.
+        if norm and any(r in norm[0] for r in rotulos):
+            valores = []
+
+            for idx in colunas:
+                if idx >= len(celulas):
+                    break
+                limpo = celulas[idx].replace(".", "").replace(",", "")
+                if not limpo.isdigit():
+                    break
+                valores.append(int(limpo))
+
+            if len(valores) == 2:
+                return {jogadores[0]: valores[0], jogadores[1]: valores[1]}
+
+    return None
+
+def extrair_totais_carreira_tabela_linhas(conteudo: str, jogadores: list) -> dict | None:
+    """
+    Lê tabelas com um jogador por linha, por exemplo:
+    | JOGADOR | GOLS | JOGOS | MÉDIA |
+    | Cristiano Ronaldo | 965 | ... |
+    Só aceita se "oficiais" aparecer logo antes da tabela.
+    """
+    alvos = [normalizar_para_busca(j).split() for j in jogadores]
+    col_nome = col_gols = None
+    inicio_cabecalho = 0
+    achados = {}
+    pos = 0
+
+    for linha in conteudo.splitlines(keepends=True):
+        inicio_linha = pos
+        pos += len(linha)
+
+        if "|" not in linha:
+            continue
+
+        celulas = [
+            c.strip().strip("*").strip()
+            for c in linha.strip().strip("|").split("|")
+        ]
+        norm = [normalizar_para_busca(c) for c in celulas]
+
+        if "jogador" in norm and "gols" in norm:
+            col_nome = norm.index("jogador")
+            col_gols = norm.index("gols")
+            inicio_cabecalho = inicio_linha
+            achados = {}
+            continue
+
+        if col_nome is None or max(col_nome, col_gols) >= len(celulas):
+            continue
+
+        tokens = norm[col_nome].split()
+
+        for jogador, alvo in zip(jogadores, alvos):
+            # Todas as palavras do nome precisam estar na célula:
+            # "Cristiano Ronaldo" não casa com "Ronaldo Nazário".
+            if all(t in tokens for t in alvo):
+                limpo = celulas[col_gols].replace(".", "").replace(",", "")
+                if limpo.isdigit():
+                    achados[jogador] = int(limpo)
+
+    if len(achados) != 2:
+        return None
+
+    contexto = normalizar_para_busca(
+        conteudo[max(0, inicio_cabecalho - 400):inicio_cabecalho]
+    )
+    if "oficia" not in contexto:
+        return None
+
+    return achados
+
+def data_na_url(url: str) -> str | None:
+    m = re.search(r"/(20\d{2})/(\d{2})/(\d{2})/", url)
+    if m:
+        return f"{m.group(3)}/{m.group(2)}/{m.group(1)}"
+    m = re.search(r"/(20\d{2})[/-](\d{2})/", url)
+    if m:
+        return f"{m.group(2)}/{m.group(1)}"
+    return None
+
+def montar_resposta_carreira_por_tabelas(resultados: list, jogadores: list) -> str | None:
+    fontes = {}
+
+    for r in resultados:
+        url = (r.get("url") or "").strip()
+        if not url or url in fontes:
+            continue
+
+        for texto in (r.get("conteudo_completo") or "", r.get("conteudo") or ""):
+            totais = (
+                extrair_totais_carreira_tabela(texto, jogadores)
+                or extrair_totais_carreira_tabela_linhas(texto, jogadores)
+            )
+            if totais:
+                fontes[url] = (r.get("titulo") or "Fonte sem título", totais)
+                break
+
+    if not fontes:
+        return None
+
+    linhas = ["Gols na carreira, segundo tabelas comparativas encontradas:"]
+    lideres = set()
+
+    for url, (titulo, totais) in fontes.items():
+        g1, g2 = totais[jogadores[0]], totais[jogadores[1]]
+
+        data = data_na_url(url)
+        sufixo = (
+            f" [data na URL: {data}]" if data
+            else " [data não identificada]"
+        )
+        linhas.append(
+            f"- {titulo}: {jogadores[0]} {g1} x {g2} {jogadores[1]}"
+            f"{sufixo} ({url})"
+        )
+
+        if g1 == g2:
+            lideres.add(None)
+        else:
+            lideres.add(jogadores[0] if g1 > g2 else jogadores[1])
+
+    if len(lideres) > 1:
+        linhas.append(
+            "\nAs fontes divergem sobre quem está à frente, "
+            "então não vou declarar quem marcou mais."
+        )
+    elif None in lideres:
+        linhas.append("\nOs totais encontrados indicam empate.")
+    else:
+        lider = next(iter(lideres))
+        if len(fontes) == 1:
+            linhas.append(
+                f"\nSegundo essa fonte, {lider} está à frente. "
+                "Só uma fonte trouxe tabela comparativa, então o número "
+                "não foi confirmado por outra."
+            )
+        else:
+            linhas.append(
+                f"\nAs {len(fontes)} fontes concordam que {lider} está à frente, "
+                "embora os totais possam diferir entre elas."
+            )
+
+    linhas.append(
+        "\nObservação: os totais mudam a cada jogo e variam entre fontes "
+        "conforme a data e o critério de contagem (algumas incluem amistosos "
+        "da seleção, outras só jogos oficiais). Use a data de cada fonte "
+        "para julgar se o número ainda é atual."
+    )
+
+    return "\n".join(linhas)
+
+MESES_PT = {
+    "janeiro": 1, "fevereiro": 2, "marco": 3, "abril": 4, "maio": 5,
+    "junho": 6, "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10,
+    "novembro": 11, "dezembro": 12,
+}
+
+
+def extrair_total_carreira_frase(conteudo: str, jogador: str) -> dict | None:
+    """
+    Lê frases como: "Lionel Messi tem um total de 936 gols em sua carreira
+    até o dia 17 de outubro de 2026. Esse número inclui 810 gols marcados
+    por clubes (...) e 127 gols pela seleção argentina."
+    Exige o nome do jogador colado à frase e uma data explícita.
+    """
+    texto = normalizar_para_busca(conteudo)
+    nome = _regex_nome(jogador)
+
+    m = re.search(
+        rf"{nome}\s+tem\s+um\s+total\s+de\s*(\d{{1,3}}(?:\.\d{{3}})+|\d+)\s*gols?",
+        texto,
+    )
+    if not m:
+        return None
+
+    resto = texto[m.end(): m.end() + 400]
+
+    d = re.search(
+        r"ate\s+(?:o\s+dia\s+)?(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(20\d{2})",
+        resto[:150],
+    )
+    if not d or d.group(2) not in MESES_PT:
+        return None
+
+    try:
+        data = date(int(d.group(3)), MESES_PT[d.group(2)], int(d.group(1)))
+    except ValueError:
+        return None
+
+    clubes = re.search(r"inclui\s*(\d+)\s*gols?\s+marcados?\s+por\s+clubes", resto)
+    selecao = re.search(r"\be\s*(\d+)\s*gols?\s+pela\s+selecao", resto)
+
+    return {
+        "gols": int(m.group(1).replace(".", "")),
+        "data": data,
+        "clubes": int(clubes.group(1)) if clubes else None,
+        "selecao": int(selecao.group(1)) if selecao else None,
+    }
+
+
+def montar_resposta_carreira_por_frases(resultados: list, jogadores: list) -> str | None:
+    melhores = {}
+
+    for r in resultados:
+        for texto in (r.get("conteudo_completo") or "", r.get("conteudo") or ""):
+            if not texto:
+                continue
+            for jogador in jogadores:
+                info = extrair_total_carreira_frase(texto, jogador)
+                if info and (
+                    jogador not in melhores
+                    or info["data"] > melhores[jogador]["data"]
+                ):
+                    melhores[jogador] = {
+                        **info,
+                        "titulo": r.get("titulo") or "Fonte sem título",
+                        "url": r.get("url", ""),
+                    }
+
+    # Só responde se os dois jogadores tiverem número com data.
+    if len(melhores) != 2:
+        return None
+
+    linhas = ["Gols na carreira, segundo fontes com data de atualização:"]
+
+    for jogador in jogadores:
+        i = melhores[jogador]
+        linhas.append(
+            f"- {jogador}: {i['gols']} gols, atualizado em "
+            f"{i['data'].strftime('%d/%m/%Y')} ({i['titulo']} — {i['url']})"
+        )
+        if (
+            i["clubes"] is not None
+            and i["selecao"] is not None
+            and i["clubes"] + i["selecao"] != i["gols"]
+        ):
+            linhas.append(
+                f"  Aviso: a própria fonte soma {i['clubes']} (clubes) + "
+                f"{i['selecao']} (seleção) = {i['clubes'] + i['selecao']}, "
+                f"diferente do total informado ({i['gols']})."
+            )
+
+    g1, g2 = melhores[jogadores[0]]["gols"], melhores[jogadores[1]]["gols"]
+    d1, d2 = melhores[jogadores[0]]["data"], melhores[jogadores[1]]["data"]
+
+    if g1 == g2:
+        linhas.append("\nResultado: empate nos totais informados.")
+    else:
+        lider, a, b = (
+            (jogadores[0], g1, g2) if g1 > g2 else (jogadores[1], g2, g1)
+        )
+        linhas.append(f"\nResultado: {lider} está à frente ({a} contra {b}).")
+
+    if d1 != d2:
+        linhas.append(
+            "Atenção: as datas de atualização são diferentes "
+            f"({d1.strftime('%d/%m/%Y')} e {d2.strftime('%d/%m/%Y')}), "
+            "então os números não são do mesmo dia."
+        )
+
+    linhas.append(
+        "Observação: o critério de contagem (oficiais, amistosos) pode variar "
+        "entre fontes."
+    )
+    return "\n".join(linhas)
+
+MSG_RECORTE_NAO_SUPORTADO = (
+    "Consigo comparar gols automaticamente por clube, por competição e na "
+    "carreira. Para esse recorte (seleção ou temporada) ainda não tenho uma "
+    "validação segura, então prefiro não apresentar um número que possa "
+    "estar errado."
+)
+
+async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
+    eh_comparacao_gols = bool(
+        intencao == "comparacao"
+        and re.search(r"\bgols?\b", pergunta, re.IGNORECASE)
+    )
+
+    resultados = await pesquisar_na_web(
+        pergunta, forcar_comparacao=eh_comparacao_gols
+    )
+
+    with open("debug_ultima_pesquisa.json", "w", encoding="utf-8") as f:
+        json.dump(resultados, f, ensure_ascii=False, indent=2, default=str)
+
+    # Comparação de gols: NUNCA delega números ao LLM.
+    if eh_comparacao_gols:
+        escopo = identificar_escopo_estatistico(pergunta)
+        jogadores = extrair_jogadores_comparacao(pergunta)
+
+        if len(jogadores) != 2:
+            return (
+                "Não consegui identificar os dois jogadores da comparação. "
+                "Tente, por exemplo: “Quem fez mais gols pelo Santos, "
+                "Neymar ou Pelé?”"
+            )
+
+        tipo = escopo["tipo"]
+
+        if tipo == "competicao" or (tipo == "equipe" and escopo.get("equipe")):
+            return montar_resposta_comparacao_gols_equipe(
+                escopo.get("equipe"),
+                jogadores,
+                resultados,
+                pergunta=pergunta,
+                tipo_escopo=tipo,
+            )
+
+        if tipo == "carreira":
+            resposta_frase = montar_resposta_carreira_por_frases(resultados, jogadores)
+            if resposta_frase:
+                return resposta_frase
+            
+            dados = extrair_totais_gols_comparacao(resultados)
+
+            tem_dados_estruturados = all(
+                dados.get(j.casefold(), {}).get("totais_carreira")
+                for j in jogadores
+            )
+
+            if tem_dados_estruturados:
+                return montar_resposta_comparacao_gols_clubes(dados, jogadores)
+
+            resposta_tabela = montar_resposta_carreira_por_tabelas(
+                resultados, jogadores
+            )
+            if resposta_tabela:
+                return resposta_tabela
+
+            return montar_resposta_comparacao_gols_clubes(dados, jogadores)
+
+        return MSG_RECORTE_NAO_SUPORTADO
+
+    # Demais perguntas estatísticas (quantidade, divergência, etc.).
+    if not resultados:
+        return (
+            "Não consegui obter fontes para responder essa pergunta "
+            "com segurança agora."
+        )
+
+    contexto_web = formatar_resultados_pesquisa(resultados, pergunta)
+    resposta = await run_in_threadpool(
+        gerar_resposta_ollama, pergunta, contexto_web
+    )
+
+    urls = list(dict.fromkeys(r["url"] for r in resultados if r.get("url")))[:5]
+    fontes = (
+        "\n\nFontes pesquisadas:\n" + "\n".join(f"- {u}" for u in urls)
+        if urls else ""
+    )
+    return resposta + fontes
+    
 @app.post("/api/chat")
 async def conversar(pergunta: Pergunta):
     texto_pergunta = pergunta.pergunta.lower()
@@ -3795,242 +4535,28 @@ async def conversar(pergunta: Pergunta):
             "response": resposta
         }
 
-    intencao_estatistica = identificar_intencao_estatistica(
-        pergunta.pergunta
-    )
+    intencao_estatistica = identificar_intencao_estatistica(pergunta.pergunta)
 
     print("PERGUNTA:", pergunta.pergunta)
     print("INTENÇÃO:", intencao_estatistica)
 
     eh_pergunta_estatistica = intencao_estatistica in {
-        "quantidade",
-        "comparacao",
-        "divergencia",
+        "quantidade", "comparacao", "divergencia",
     }
-        
-    if conhecimento is not None and not eh_pergunta_estatistica:
-        return {
-            "response": conhecimento.strip()
-        }
 
-    conhecimento_historico = buscar_conhecimento_historico(
-        pergunta.pergunta
-    )
+    if conhecimento is not None and not eh_pergunta_estatistica:
+        return {"response": conhecimento.strip()}
+
+    conhecimento_historico = buscar_conhecimento_historico(pergunta.pergunta)
 
     if conhecimento_historico is not None and not eh_pergunta_estatistica:
+        return {"response": conhecimento_historico["resposta"]}
+
+    if eh_pergunta_estatistica:
         return {
-            "response": conhecimento_historico["resposta"]
-        }
-
-    resultados_pesquisa = await pesquisar_na_web(pergunta.pergunta)
-
-    dados_comparacao = extrair_totais_gols_comparacao(
-        resultados_pesquisa
-    )
-
-    print("\n=== TOTAIS EXTRAÍDOS ===")
-    print(dados_comparacao)
-    print("=== FIM DOS TOTAIS ===\n")
-
-    if (
-        intencao_estatistica == "comparacao"
-        and re.search(r"\bgols?\b", pergunta.pergunta, re.IGNORECASE)
-        and identificar_escopo_estatistico(
-            pergunta.pergunta
-        )["tipo"] == "carreira"
-    ):
-        jogadores_solicitados = extrair_jogadores_comparacao(
-            pergunta.pergunta
-        )
-
-        print("JOGADORES SOLICITADOS:", jogadores_solicitados)
-
-        resposta_comparacao = montar_resposta_comparacao_gols_clubes(
-            dados_comparacao,
-            jogadores_solicitados
-        )
-
-        print("RESPOSTA DA COMPARAÇÃO:", resposta_comparacao)
-
-        return {
-            "response": resposta_comparacao    
-        }
-    
-    print("RESULTADOS DA WEB:", len(resultados_pesquisa))
-
-    if resultados_pesquisa:
-        contexto_web = formatar_resultados_pesquisa(
-            resultados_pesquisa,
-            pergunta.pergunta
-        )
-
-        print("\n=== EVIDÊNCIAS ORGANIZADAS ===")
-        print(contexto_web)
-        print("=== FIM DAS EVIDÊNCIAS ===\n")
-
-        intencao_estatistica = identificar_intencao_estatistica(
-            pergunta.pergunta
-        )
-
-        print("PERGUNTA:", pergunta.pergunta)
-        print("INTENÇÃO:", intencao_estatistica)
-
-        instrucoes_estatisticas = {
-            "quantidade": """
-        A pergunta pede a quantidade de gols de um jogador.
-
-        - Identifique exatamente o jogador perguntado.
-        - Responda diretamente sobre esse jogador.
-        - Não apresente um número como definitivo se as fontes
-          mostrarem critérios de contagem diferentes.
-        - Informe o número e a fonte que o atribui ao jogador.
-        - Esclareça se a contagem inclui amistosos ou jogos não oficiais,
-          somente quando isso estiver documentado nas fontes.
-        - Se houver números divergentes, cite os principais valores
-          encontrados e explique brevemente por que variam,
-          quando as fontes permitirem essa conclusão.
-        - Não misture gols por clube, pela seleção e na carreira.
-        - Não invente números ou critérios.
-        - Se os dados não permitirem identificar um total confiável,
-          explique essa limitação.
-        """,
-            
-            "comparacao": """
-        A pergunta solicita comparar a quantidade de gols oficiais na carreira
-        dos jogadores mencionados.
-
-        Siga obrigatoriamente estas etapas:
-
-        1. Identifique todos os jogadores mencionados na pergunta original.
-        2. Examine separadamente as fontes de cada jogador nos dados da pesquisa.
-        3. Para cada jogador, procure um total explícito de gols oficiais
-           na carreira e identifique o período a que esse total se refere.
-        4. Verifique se os totais incluem clubes e seleção principal e se
-           usam critérios de contagem equivalentes.
-        5. Não confunda o total de gols de um jogador com uma marca isolada,
-           como 700, 900 ou 1.000 gols, sem confirmar o que ela representa.
-        6. Não use números de gols por um único clube como total da carreira.
-        7. Não considere a data da consulta como prova de que um número
-           foi atualizado nessa data.
-        8. Não invente valores nem deduza totais que não estejam sustentados
-           pelas fontes.
-        9. Se houver dados comparáveis, apresente os dois números,
-           as fontes e as respectivas datas disponíveis. Só então responda
-           quem marcou mais.
-        10. Se houver dados confiáveis para apenas um jogador, informe
-            o número encontrado para ele e explique qual dado falta
-            para concluir a comparação.
-
-        Formato da resposta:
-        - Primeiro jogador citado: total encontrado, critério, data e fonte,
-          se disponíveis.
-        - Segundo jogador citado: total encontrado, critério, data e fonte,
-          se disponíveis.
-        - Conclusão: comparação direta ou explicação objetiva da limitação.
-
-        Não responda apenas com um número isolado.
-        Não declare a comparação impossível somente porque existem
-        critérios históricos diferentes.
-        RESTRIÇÕES DE ESCOPO:
-
-        - Compare exclusivamente os jogadores citados na pergunta original.
-        - Não mencione outros jogadores, nem mesmo como exemplos ou contexto.
-        - Não acrescente estatísticas de clubes, seleções, títulos ou competições
-          que não sejam necessárias para responder à pergunta.
-        - A resposta deve conter no máximo três partes:
-          1. O total encontrado para cada jogador solicitado.
-          2. A fonte que sustenta cada total e o critério de contagem.
-          3. Uma conclusão direta, somente se os dados forem comparáveis.
-        - Se não houver evidência suficiente para um dos totais, informe
-          essa limitação em vez de preencher a lacuna com outro jogador
-          ou com números não confirmados.
-        """,
-
-            "divergencia": """
-    A pergunta solicita uma explicação sobre diferenças estatísticas.
-    Apresente os números e atribua cada um à respectiva fonte.
-    Explique os critérios de contagem apenas quando as fontes
-    sustentarem essa explicação.
-    Não declare um único total universalmente correto sem evidências.
-    """
-        }
-
-        if intencao_estatistica == "comparacao":
-            escopo = identificar_escopo_estatistico(pergunta.pergunta)
-            jogadores_solicitados = extrair_jogadores_comparacao(
-                pergunta.pergunta
+            "response": await responder_pergunta_estatistica(
+                pergunta.pergunta, intencao_estatistica
             )
-
-            contexto_web = f"""
-        Você é o assistente Camisa10, especializado em estatísticas de futebol.
-
-        PERGUNTA ORIGINAL:
-        {pergunta.pergunta}
-        
-        ESCOPO IDENTIFICADO:
-        {escopo}
-        
-        JOGADORES SOLICITADOS:
-        {jogadores_solicitados}
-        
-        EVIDÊNCIAS DA PESQUISA:
-        {contexto_web}
-        
-        INSTRUÇÕES OBRIGATÓRIAS:
-        
-        1. Responda exatamente à estatística e ao recorte pedidos na pergunta original.
-        2. Compare somente os jogadores solicitados.
-        3. Respeite o escopo identificado:
-           - carreira: total da carreira, conforme o critério explicitado pelas fontes;
-           - equipe: gols pelo clube ou equipe mencionados;
-           - selecao: gols pela seleção mencionada;
-           - competicao: gols na competição mencionada;
-           - temporada: gols na temporada ou período solicitado.
-        4. Não substitua um recorte específico pelo total da carreira.
-        5. Não use gols de uma competição diferente da solicitada.
-        6. Não misture gols por clubes, seleção, competições e temporadas.
-        7. Não atribua um número a um jogador sem evidência que associe claramente
-           o número a ele.
-        8. Identifique a fonte e o critério de contagem de cada número utilizado.
-        9. Se as fontes apresentarem critérios diferentes, explique a diferença
-           sem tratar os números como diretamente comparáveis.
-        10. Só conclua quem marcou mais se houver números comparáveis para os
-            dois jogadores no escopo solicitado.
-        11. Se faltarem dados, explique objetivamente qual informação não foi
-            encontrada. Não invente números nem complete lacunas por suposição.
-        12. Responda em português brasileiro, de forma objetiva, sem incluir
-            estatísticas desnecessárias.
-        """
-
-        elif intencao_estatistica in instrucoes_estatisticas:
-            contexto_web = f"""
-        PERGUNTA:
-        {pergunta.pergunta}
-
-        INSTRUÇÕES:
-        {instrucoes_estatisticas[intencao_estatistica]}
-
-        DADOS DA PESQUISA:
-        {contexto_web}
-        """
-            
-        resposta = gerar_resposta_ollama(
-            pergunta.pergunta,
-            contexto_web
-        )
-
-    if intencao_estatistica == "comparacao":
-        pergunta_normalizada = pergunta.pergunta.lower()
-        
-        fontes = "\n\nFontes consultadas:\n" + "\n".join(
-            f"- [{item.get('jogador_pesquisado') or 'Geral'}]"
-            f"{item['titulo']}: {item['url']}"
-            for item in resultados_pesquisa
-            if item.get("url")
-        )
-
-        return {
-            "response": resposta + fontes
         }
     
     time = identificar_time(pergunta.pergunta)

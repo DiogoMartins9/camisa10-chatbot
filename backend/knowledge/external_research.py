@@ -143,6 +143,31 @@ def normalizar_escopo(texto: str) -> str:
     )
     return re.sub(r"\s+", " ", texto)
 
+COMPETICOES = {
+    "libertadores": {"consulta": "Copa Libertadores", "termos": ["libertadores"]},
+    "brasileirao": {
+        "consulta": "Campeonato Brasileiro",
+        "termos": ["brasileirao", "campeonato brasileiro"],
+    },
+    "copa do brasil": {"consulta": "Copa do Brasil", "termos": ["copa do brasil"]},
+    "paulistao": {
+        "consulta": "Campeonato Paulista",
+        "termos": ["paulistao", "campeonato paulista"],
+    },
+    "champions": {
+        "consulta": "Champions League",
+        "termos": ["champions league", "liga dos campeoes"],
+    },
+}
+
+
+def identificar_competicao_pergunta(pergunta: str) -> str | None:
+    texto = normalizar_escopo(pergunta)
+    for chave, info in COMPETICOES.items():
+        if any(termo in texto for termo in info["termos"]):
+            return chave
+    return None
+
 def pergunta_sobre_divergencia_estatistica(pergunta: str) -> bool:
     """
     Identifica perguntas sobre divergências entre estatísticas
@@ -278,58 +303,125 @@ def pergunta_compara_gols_atuais(pergunta: str) -> bool:
 
     return any(termo in texto for termo in termos)
 
-def extrair_jogadores_comparacao(pergunta: str) -> list[str]:
+def normalizar_texto_pesquisa(texto: str) -> str:
+    texto = unicodedata.normalize("NFKC", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def extrair_jogadores_comparacao(pergunta: str) -> list:
     texto = pergunta.strip()
-
-    if ":" in texto:
-        texto = texto.rsplit(":", 1)[1]
-
-    texto = re.sub(
-        r"(?i)^\s*(?:compare|comparar)\s+"
-        r"(?:(?:os|a quantidade de)\s+)?"
-        r"(?:gols?\s+)?(?:oficiais\s+)?"
-        r"(?:na carreira\s+)?(?:de\s+)?",
-        "",
-        texto,
-    )
-
     texto = re.sub(r"[?!]+$", "", texto).strip()
 
     partes = re.split(
-        r"(?i)\s+(?:e|ou|vs\.?|versus|contra)\s+",
+        r"\s+(?:ou|vs\.?|versus)\s+",
         texto,
         maxsplit=1,
+        flags=re.IGNORECASE,
     )
 
     if len(partes) != 2:
+        print("Não foi possível separar os dois jogadores:", partes)
         return []
 
     jogadores = []
 
-    for parte in partes:
-        nome = parte.strip(" \t\n?!:.-")
+    for indice, parte in enumerate(partes):
+        nome = parte.strip()
 
-        nome = re.sub(
-            r"(?i)\s+(?:na|no|nas|nos|pela|pelo|durante)\s+.+$",
-            "",
-            nome,
-        ).strip()
+        # Se houver vírgula, o nome do jogador costuma vir depois dela.
+        # Ex.: "Quem fez mais gols pelo São Paulo, Rogério Ceni"
+        if "," in nome:
+            nome = nome.rsplit(",", 1)[-1].strip()
+        else:
+            # Remove o início da pergunta, preservando o nome do jogador.
+            nome = re.sub(
+                r"^.*?\b(?:quem\s+)?"
+                r"(?:tem|fez|marcou|anotou)\s+"
+                r"(?:mais|menos)\s+gols?\s+",
+                "",
+                nome,
+                flags=re.IGNORECASE,
+            ).strip()
+
+            # Remove contexto de clube/competição que venha antes do nome.
+            # Esta regra cobre perguntas sem vírgula em formatos comuns.
+            if indice == 0:
+                nome = re.sub(
+                    r"^.*\b(?:pelo|pela|pelos|pelas)\s+"
+                    r".*?\b(?:na|no|nas|nos)\s+"
+                    r"(?:libertadores|champions league|"
+                    r"copa do brasil|brasileir[aã]o)\s+",
+                    "",
+                    nome,
+                    flags=re.IGNORECASE,
+                ).strip()
+
+        nome = re.sub(r"[?!.,;:]+$", "", nome).strip()
 
         if nome:
             jogadores.append(nome)
 
+    print("JOGADORES EXTRAÍDOS:", jogadores)
+
     return jogadores if len(jogadores) == 2 else []
 
+def extrair_equipe_da_pergunta(pergunta: str) -> str | None:
+    """
+    Identifica a equipe mencionada após expressões como 'pelo', 
+    'pela', 'no' ou 'na'.
+    """
+    padrao = re.compile(
+        r"\b(?:pelo|pela|no|na|nos|nas)\s+"
+        r"(.+?)"
+        r"(?=\s*[?!.,;:]?\s*$)",
+        re.IGNORECASE,
+    )
+
+    correspondencia = padrao.search(pergunta.strip())
+
+    if not correspondencia:
+        return None
+
+    equipe = correspondencia.group(1).strip(" \t\n?!.,;:")
+
+    equipe = re.sub(
+        r"(?i)\s+(?:na carreira|na temporada|"
+        r"na libertadores|no brasileirão)$",
+        "",
+        equipe,
+    ).strip()
+
+    return equipe or None
 
 def identificar_escopo_estatistico(pergunta: str) -> dict:
     """
-    Identifica se a pergunta pede gols na carreira ou
-    um recorte específico, como clube, seleção,
-    competição ou temporada.
+    Identifica o recorte estatístico solicitado.
     """
     texto = pergunta.casefold()
 
     escopos = []
+
+    competicoes = (
+        r"\bchampions league\b",
+        r"\bliga dos campeões\b",
+        r"\blibertadores\b",
+        r"\bcopa do brasil\b",
+        r"\bbrasileirão\b",
+        r"\bbrasileirao\b",
+        r"\bpremier league\b",
+        r"\bla liga\b",
+        r"\bcopa américa\b",
+        r"\bcopa america\b",
+        r"\beurocopa\b",
+        r"\bmundial de clubes\b",
+        r"\bworld cup\b",
+        r"\bbrasileirão feminino\b",
+        r"\bcampeonato paulista\b",
+        r"\bpaulistão\b",
+    )
+
+    if any(re.search(padrao, texto) for padrao in competicoes):
+        escopos.append("competicao")
 
     if re.search(
         r"\bsele[cç][aã]o(?:\s+brasileira|\s+principal)?\b",
@@ -340,67 +432,80 @@ def identificar_escopo_estatistico(pergunta: str) -> dict:
     if re.search(
         r"\b(?:temporada|época|epoca)\b"
         r"|\b(?:19|20)\d{2}"
-        r"|\b(?:19|20)\d{2}\s*/\s*(?:19|20)\d{2}\b",
+        r"(?:\s*/\s*(?:19|20)?\d{2})?\b",
         texto,
     ):
         escopos.append("temporada")
 
-    if re.search(
-        r"\b(?:champions league|liga dos campeões|"
-        r"libertadores|copa do brasil|brasileir[aã]o|"
-        r"premier league|la liga|copa américa|copa america|"
-        r"eurocopa|mundial de clubes|world cup|"
-        r"competição|competicao)\b",
-        texto,
-    ):
-        escopos.append("competicao")
+    equipe = None
 
     padrao_equipe = (
-        r"\b(?:pelo|pela|com o|com a|no|na)\s+"
-        r"([a-zà-ÿ][a-zà-ÿ0-9-]*)"
+        r"\b(?:pelo|pela|pelos|pelas|do|da|dos|das)"
+        r"\s+(.+?)"
+        r"(?=\s+(?:na|no|nas|nos)\s+"
+        r"(?:libertadores|champions league|copa do brasil|"
+        r"brasileirão|brasileirao|premier league|la liga|"
+        r"copa américa|copa america|mundial de clubes|"
+        r"campeonato paulista|paulistão)\b|[,?!;:]|$)"
     )
 
-    termos_genericos = {
-        "carreira", "total", "temporada", "seleção",
-        "selecao", "competição", "competicao",
-        "champions", "liga", "copa", "brasileirão",
-        "brasileirao", "época", "epoca",
-    }
+    match_equipe = re.search(padrao_equipe, pergunta, re.IGNORECASE)
 
-    for correspondencia in re.finditer(padrao_equipe, texto):
-        termo = correspondencia.group(1)
+    if match_equipe:
+        equipe = re.sub(r"\s+", " ", match_equipe.group(1).strip())
+        equipe_norm = normalizar_escopo(equipe)
 
-        if termo not in termos_genericos:
+        if equipe_norm.startswith("selecao") or re.search(
+            r"\b(?:ou|vs|versus)\b", equipe_norm
+        ):
+            equipe = None
+
+        if equipe:
             escopos.append("equipe")
-            break
 
-    escopos = list(dict.fromkeys(escopos))
+    if "competicao" in escopos:
+        tipo = "competicao"
+    elif "temporada" in escopos:
+        tipo = "temporada"
+    elif "selecao" in escopos:
+        tipo = "selecao"
+    elif "equipe" in escopos:
+        tipo = "equipe"
+    else:
+        tipo = "carreira"
 
-    return {
-        "tipo": "especifico" if escopos else "carreira",
-        "escopos": escopos,
+    resultado = {
+        "tipo": tipo,
+        "escopos": list(dict.fromkeys(escopos)),
+        "equipe": equipe,
+        "competicao_nome": identificar_competicao_pergunta(pergunta),
     }
 
-async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
-    """
-    Pesquisa na web usando o Tavily.
-    Em comparações estatísticas, pesquisa cada jogador separadamente.
-    """
+    print("=== DEBUG ESCOPO ===")
+    print("Pergunta recebida:", repr(pergunta))
+    print("Escopos encontrados:", resultado["escopos"])
+    print("Tipo calculado:", resultado["tipo"])
+    print("Equipe identificada:", resultado["equipe"])
+    print("====================")
+
+    return resultado 
+
+async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_comparacao: bool = False,):
     api_key = os.getenv("TAVILY_API_KEY")
 
     if not api_key:
         print("TAVILY_API_KEY não foi encontrada.")
         return []
 
-    eh_comparacao = pergunta_sobre_comparacao_estatistica(pergunta)
+    eh_comparacao = forcar_comparacao or pergunta_sobre_comparacao_estatistica(pergunta)
     hoje = date.today()
-
-    consultas = []
 
     if eh_comparacao:
         escopo = identificar_escopo_estatistico(pergunta)
-        data_referencia = hoje.strftime("%d/%m/%Y")
         jogadores = extrair_jogadores_comparacao(pergunta)
+        print("\n=== DEBUG DA PESQUISA ===")
+        print("Escopo:", escopo)
+        print("Jogadores:", jogadores)
 
         if len(jogadores) != 2:
             print(
@@ -409,23 +514,37 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
             )
             return []
 
+        equipe = escopo.get("equipe") or ""
+        competicao = COMPETICOES.get(
+            escopo.get("competicao_nome") or "", {}
+        ).get("consulta", "")
+
         consultas = []
 
-        if escopo["tipo"] == "especifico":
-            consultas = [
-                {
-                    "jogador": jogador,
-                    "query": (
-                        f"{pergunta} "
-                        f"estatísticas de gols oficiais de {jogador}. "
-                        "Identifique o clube, seleção, competição "
-                        "ou temporada solicitados. "
-                        "Não substitua esse recorte pelo total da carreira. "
-                        f"Referência: {data_referencia}."
-                    ),
-                }
-                for jogador in jogadores
-            ]
+        for jogador in jogadores:
+            if escopo["tipo"] in {"equipe", "competicao"}:
+                query = f"{jogador} gols {equipe} {competicao}"
+            elif escopo["tipo"] == "selecao":
+                query = f"{jogador} gols pela seleção principal"
+            elif escopo["tipo"] == "temporada":
+                query = f"{jogador} gols temporada {equipe}"
+            else:
+                query = f"Quantos gols {jogador} tem na carreira contagem atualizada"
+
+            consultas.append({"jogador": jogador, "query": " ".join(query.split())})
+
+        if escopo["tipo"] in {"equipe", "competicao"}:
+            consultas.append({
+                "jogador": "__comparacao__",
+                "query": " ".join(
+                    f"{jogadores[0]} {jogadores[1]} {equipe} {competicao} artilheiros gols".split()
+                ),
+            })
+        elif escopo["tipo"] == "carreira":
+            consultas.append({
+                "jogador": "__comparacao__",
+                "query": f"{jogadores[0]} vs {jogadores[1]} career goals stats comparison",
+            })
 
         else:
             consultas = [
@@ -433,13 +552,32 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                     "jogador": jogador,
                     "query": (
                         f"{pergunta} "
-                        "estatísticas oficiais de futebol. "
+                        f"Total de gols oficiais na carreira de {jogador}. "
+                        "Considere separadamente gols por clubes e "
+                        "pela seleção principal. "
                         "Priorize fontes confiáveis e identifique "
-                        "o jogador, a estatística e o critério de contagem."
+                        "o período e o critério de contagem."
                     ),
                 }
                 for jogador in jogadores
             ]
+        if (
+            escopo["tipo"] in {"equipe", "competicao"}
+            and escopo.get("equipe")
+        ):
+            consulta_conjunta = (
+                f'"{jogadores[0]}" "{jogadores[1]}" '
+                f'"{escopo["equipe"]}" '
+                f'{pergunta} '
+                "artilharia gols estatísticas oficiais "
+                "campeonato brasileiro Brasileirão"
+            )
+
+            consultas.append({
+                "jogador": "__comparacao__",
+                "query": consulta_conjunta,
+            })
+
     else:
         consultas = [
             {
@@ -460,6 +598,8 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
             for consulta_info in consultas:
                 jogador = consulta_info["jogador"]
                 consulta = consulta_info["query"]
+                print(f"\nConsulta enviada ao Tavily para {jogador}:")
+                print(consulta)
 
                 payload = {
                     "api_key": api_key,
@@ -470,6 +610,11 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                     if eh_comparacao
                     else max_resultados,
                     "include_answer": False,
+                    "include_raw_content": "markdown" if eh_comparacao else False,
+                    "exclude_domains": [
+                        "instagram.com", "facebook.com", "threads.com",
+                        "tiktok.com", "x.com", "twitter.com",
+                    ],
                 }
 
                 response = await client.post(
@@ -499,6 +644,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                         "titulo": titulo,
                         "url": url,
                         "conteudo": conteudo,
+                        "conteudo_completo": (item.get("raw_content") or "")[:300_000],
                         "score": item.get("score", 0),
                         "pontuacao_fonte": pontuar_fonte(url),
                         "data_publicacao": (
@@ -573,7 +719,12 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5):
                     resultados_jogador[:max_resultados]
                 )
 
-            resultados = resultados_finais
+            resultados_conjuntos = [
+                item for item in resultados
+                if item.get("jogador_pesquisado") == "__comparacao__"
+            ]
+
+            resultados = resultados_finais + resultados_conjuntos
 
         print(f"\nPergunta pesquisada: {pergunta}")
         print(f"Data de referência: {hoje.strftime('%d/%m/%Y')}")
