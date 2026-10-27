@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
 from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica, COMPETICOES, identificar_competicao_pergunta)
+from backend.services.api_football import buscar_jogos_por_data
 from fastapi.concurrency import run_in_threadpool
 import requests
 import re
@@ -24,6 +25,26 @@ def inicio():
     return {
         "message": "API do Chatbot Camisa 10 funcionando!"
     }
+
+@app.get("/api/jogos")
+def listar_jogos(data: date | None = None):
+    """
+    Retorna os jogos disponíveis na API-Football
+    para a data informada ou para hoje.
+    """
+
+    data_consulta = data or datetime.now(
+        ZoneInfo("America/Sao_Paulo")
+    ).date()
+
+    resultado = buscar_jogos_por_data(
+        data_consulta.isoformat()
+    )
+
+    if "erro" in resultado:
+        return resultado
+
+    return resultado
 
 @app.get("/api/identificar-time")
 def identificar_time(pergunta):
