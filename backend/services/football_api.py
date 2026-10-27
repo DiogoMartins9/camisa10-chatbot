@@ -196,17 +196,30 @@ def buscar_jogos_time(team_id, status):
         "status": status
     }
 
-    resposta = requests.get(
-        url,
-        headers=headers,
-        params=params
-    )
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=15
+        )
 
-    dados = resposta.json()
+        try: 
+            dados = resposta.json()
+        except ValueError:
+            dados = {
+                "mensagem": "A API retornou uma resposta inválida."
+            }
+
+    except requests.RequestException as erro:
+        return {
+            "erro": str(erro)
+        }
 
     if resposta.status_code != 200:
         return {
-            "erro": dados
+            "erro": dados,
+            "codigo": resposta.status_code
         }
 
     resultado = []
