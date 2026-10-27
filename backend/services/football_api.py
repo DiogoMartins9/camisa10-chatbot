@@ -3,9 +3,10 @@ import requests
 import unicodedata
 import time
 from dotenv import load_dotenv
+from pathlib import Path
 from datetime import datetime, timezone
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 API_KEY = os.getenv("API_FOOTBALL_KEY")
 FOOTBALL_DATA_TOKEN = os.getenv("FOOTBALL_DATA_TOKEN")
