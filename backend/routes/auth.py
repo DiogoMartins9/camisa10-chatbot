@@ -4,7 +4,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.database.models import Usuario
 
 from backend.database.connection import get_db
-from backend.database.models import Usuario
 from backend.schemas.auth import (
     CadastroRequest,
     LoginRequest,
@@ -61,6 +60,7 @@ def registrar_usuario(
             nome=dados.nome,
             email=str(dados.email).lower(),
             senha=dados.senha,
+            data_nascimento=dados.data_nascimento,
         )
 
         token = criar_token_acesso(usuario)

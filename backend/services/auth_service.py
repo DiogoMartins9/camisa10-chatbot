@@ -12,7 +12,7 @@ from backend.database.models import (
 )
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 
 import jwt
 
@@ -22,7 +22,8 @@ def cadastrar_usuario(
         db: Session, 
         nome: str, 
         email: str, 
-        senha: str
+        senha: str,
+        data_nascimento: date
 ) -> Usuario:
 
     email = email.strip().lower()
@@ -41,7 +42,8 @@ def cadastrar_usuario(
         usuario = Usuario(
             nome=nome,
             email=email,
-            senha_hash=senha_hash
+            senha_hash=senha_hash,
+            data_nascimento=data_nascimento
         )
 
         db.add(usuario)

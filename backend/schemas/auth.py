@@ -1,10 +1,12 @@
 from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
 import re
+from datetime import date
 
 class CadastroRequest(BaseModel):
     nome: str = Field(min_length=2, max_length=150)
     email: EmailStr
     senha: str = Field(min_length=8)
+    data_nascimento: date
 
     @field_validator("nome")
     @classmethod
@@ -18,6 +20,17 @@ class CadastroRequest(BaseModel):
             raise ValueError(
                 "O nome deve conter apenas letras, espaços, hífens ou apóstrofos."
             )
+
+        return valor
+
+    @field_validator("data_nascimento")
+    @classmethod
+    def validar_data_nascimento(cls, valor: date) -> date:
+        if valor < date(1900, 1, 1):
+            raise ValueError("O ano de nascimento deve ser 1900 ou posterior.")
+
+        if valor > date.today():
+            raise ValueError("A data de nascimento não pode ser futura.")
 
         return valor
 
