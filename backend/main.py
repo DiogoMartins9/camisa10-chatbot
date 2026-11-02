@@ -11,11 +11,13 @@ from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
 from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica, COMPETICOES, identificar_competicao_pergunta)
 from backend.services.api_football import buscar_jogos_por_data
 from fastapi.concurrency import run_in_threadpool
+from backend.routes.auth import router as auth_router
 import requests
 import re
 import json
 
 app = FastAPI()
+app.include_router(auth_router)
 
 class Pergunta(BaseModel):
     pergunta: str
