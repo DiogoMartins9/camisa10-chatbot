@@ -38,6 +38,13 @@ class LoginRequest(BaseModel):
     email: EmailStr
     senha: str = Field(min_length=1)
 
+class TimeCoracaoResponse(BaseModel):
+    id: int
+    nome: str
+    logo: str | None = None
+    pais: str | None = None
+    competicoes: list[str] = []
+
 class UsuarioResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,6 +54,7 @@ class UsuarioResponse(BaseModel):
     data_nascimento: date | None = None
     apelido: str | None = None
     time_coracao_id: str | None = None
+    time_coracao: TimeCoracaoResponse | None = None
 
 class AuthResponse(BaseModel):
     access_token: str

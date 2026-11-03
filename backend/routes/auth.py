@@ -4,6 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.database.models import Usuario, Perfil
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from backend.services.football_api import buscar_times_todas_competicoes
 
 from backend.database.connection import get_db
 from backend.schemas.auth import (
@@ -133,6 +134,28 @@ def login_usuario(
         ),
     )
 
+def buscar_dados_time_coracao(time_coracao_id: str | None):
+    """
+    Localiza os dados completos do time favorito
+    usando o ID salvo no perfil do usuário.
+    """
+
+    if not time_coracao_id:
+        return None
+
+    resultado = buscar_times_todas_competicoes()
+
+    if not isinstance(resultado, dict):
+        return None
+
+    times = resultado.get("times", [])
+
+    for time in times:
+        if str(time.get("id")) == str(time_coracao_id):
+            return time
+
+    return None
+
 @router.get(
     "/me",
     response_model=UsuarioResponse,
@@ -153,6 +176,9 @@ def obter_usuario_autenticado(
         data_nascimento=usuario.data_nascimento,
         apelido=perfil.apelido if perfil else None,
         time_coracao_id=perfil.time_coracao_id if perfil else None,
+        time_coracao=buscar_dados_time_coracao(
+            perfil.time_coracao_id if perfil else None
+        ),
     )
 
 @router.put("/me", response_model=UsuarioResponse)
@@ -216,6 +242,9 @@ def atualizar_perfil(
             id=str(usuario.id),
             nome=usuario.nome,
             email=usuario.email,
+            data_nascimento=usuario.data_nascimento,
+            apelido=perfil.apelido,
+            time_coracao_id=perfil.time_coracao_id,
         )
 
     except HTTPException:

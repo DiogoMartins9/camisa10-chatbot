@@ -2,7 +2,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao)
+from backend.services.football_api import (buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta, date
@@ -18,6 +18,14 @@ import json
 
 app = FastAPI()
 app.include_router(auth_router)
+
+@app.get("/api/times")
+async def listar_times():
+    resultado = await run_in_threadpool(
+        buscar_times_todas_competicoes
+    )
+
+    return resultado
 
 class Pergunta(BaseModel):
     pergunta: str

@@ -20,6 +20,7 @@ _CACHE_COMPETICOES = {
 
 _CACHE_TIMES_COMPETICAO = {}
 TEMPO_CACHE_SEGUNDOS = 3600
+TEMPO_CACHE_TIMES_SEGUNDOS = 86400
 
 
 def normalizar_nome_time(nome):
@@ -139,6 +140,140 @@ def buscar_time(nome_time):
     return {
         "erro": f"Time '{nome_time}' não encontrado."
     }
+
+_CACHE_TIMES_PRINCIPAIS = {
+    "dados": None,
+    "atualizado_em": 0
+}
+
+COMPETICOES_PRINCIPAIS = {
+    71: "Brasileirão Série A",
+    39: "Premier League",
+    140: "La Liga",
+    78: "Bundesliga",
+    135: "Serie A",
+    61: "Ligue 1",
+    2: "Champions League",
+    13: "Libertadores",
+    11: "Copa Sul-Americana"
+}
+
+
+def buscar_times_principais_competicoes(season=2026):
+    """
+    Busca os clubes das principais competições na API-Football.
+    Reúne clubes repetidos pelo ID e informa suas competições.
+    """
+
+    agora = time.time()
+
+    # Verifica se existe uma lista em cache para essa temporada.
+    cache = _CACHE_TIMES_PRINCIPAIS
+
+    if (
+        cache["dados"] is not None
+        and cache.get("season") == season
+        and agora - cache["atualizado_em"] < TEMPO_CACHE_SEGUNDOS
+    ):
+        return cache["dados"]
+
+    if not API_KEY:
+        return {
+            "erro": "A chave API_FOOTBALL_KEY não foi configurada."
+        }
+
+    times_por_id = {}
+    avisos = []
+
+    url = f"{BASE_URL}/teams"
+
+    headers = {
+        "x-apisports-key": API_KEY
+    }
+
+    for league_id, nome_competicao in COMPETICOES_PRINCIPAIS.items():
+
+        params = {
+            "league": league_id,
+            "season": season
+        }
+
+        try:
+            resposta = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=20
+            )
+
+            resposta.raise_for_status()
+            dados = resposta.json()
+
+        except requests.RequestException as erro:
+            avisos.append({
+                "competicao": nome_competicao,
+                "erro": str(erro)
+            })
+            continue
+
+        except ValueError:
+            avisos.append({
+                "competicao": nome_competicao,
+                "erro": "A API retornou uma resposta inválida."
+            })
+            continue
+
+        if dados.get("errors"):
+            avisos.append({
+                "competicao": nome_competicao,
+                "erro": dados["errors"]
+            })
+            continue
+
+        for item in dados.get("response", []):
+
+            time_api = item.get("team", {})
+            time_id = time_api.get("id")
+
+            if not time_id:
+                continue
+
+            if time_id not in times_por_id:
+                times_por_id[time_id] = {
+                    "id": time_id,
+                    "nome": time_api.get("name"),
+                    "logo": time_api.get("logo"),
+                    "pais": time_api.get("country"),
+                    "competicoes": []
+                }
+
+            if nome_competicao not in times_por_id[time_id]["competicoes"]:
+                times_por_id[time_id]["competicoes"].append(
+                    nome_competicao
+                )
+
+    resultado = list(times_por_id.values())
+
+    if not resultado:
+        return {
+            "erro": "Não foi possível encontrar clubes nas competições.",
+            "avisos": avisos
+        }
+
+    resultado.sort(key=lambda clube: clube["nome"] or "")
+
+    # Salva o resultado no cache.
+    _CACHE_TIMES_PRINCIPAIS["dados"] = resultado
+    _CACHE_TIMES_PRINCIPAIS["atualizado_em"] = time.time()
+    _CACHE_TIMES_PRINCIPAIS["season"] = season
+
+    if avisos:
+        return {
+            "times": resultado,
+            "avisos": avisos
+        }
+
+    return resultado
 
 # def buscar_partidas_data(data):
 #    url = f"{BASE_URL}/fixtures"
@@ -429,7 +564,7 @@ def buscar_times_competicao(codigo_competicao):
 
     cache = _CACHE_TIMES_COMPETICAO.get(codigo_competicao)
 
-    if cache and agora - cache["atualizado_em"] < TEMPO_CACHE_SEGUNDOS:
+    if cache and agora - cache["atualizado_em"] < TEMPO_CACHE_TIMES_SEGUNDOS:
         return cache["dados"]
 
     url = (
@@ -466,7 +601,8 @@ def buscar_times_competicao(codigo_competicao):
             "id": time_api.get("id"),
             "nome": time_api.get("name"),
             "pais": time_api.get("area", {}).get("name"),
-            "competicoes": time_api.get("runningCompetitions", [])
+            "competicoes": time_api.get("runningCompetitions", []),
+            "logo": time_api.get("crest"),
         })
 
     _CACHE_TIMES_COMPETICAO[codigo_competicao] = {
@@ -475,6 +611,86 @@ def buscar_times_competicao(codigo_competicao):
     }
 
     return times
+
+def buscar_times_todas_competicoes():
+    """
+    Reúne os clubes de todas as competições disponíveis
+    na conta da football-data.org.
+    Remove clubes duplicados pelo ID.
+    """
+
+    competicoes = buscar_competicoes_football_data()
+
+    codigos_permitidos = {
+        "BSA",  # Brasileirão Série A
+        "PL",   # Premier League
+        "PD",   # La Liga
+        "BL1",  # Bundesliga
+        "SA",   # Serie A italiana
+        "FL1",  # Ligue 1
+        "CL",   # Champions League
+        "CLI",  # Libertadores
+    }
+
+    competicoes = [
+        competicao
+        for competicao in competicoes
+        if competicao.get("codigo") in codigos_permitidos
+    ]
+
+    if isinstance(competicoes, dict) and competicoes.get("erro"):
+        return {
+            "times": [],
+            "avisos": [competicoes["erro"]]
+        }
+
+    times_por_id = {}
+    avisos = []
+
+    for competicao in competicoes:
+        codigo = competicao.get("codigo")
+        nome_competicao = competicao.get("nome")
+
+        if not codigo:
+            continue
+
+        resultado = buscar_times_competicao(codigo)
+
+        if isinstance(resultado, dict) and resultado.get("erro"):
+            avisos.append(
+                f"{nome_competicao}: {resultado['erro']}"
+            )
+            continue
+
+        for time in resultado:
+            time_id = time.get("id")
+
+            if time_id is None:
+                continue
+
+            if time_id not in times_por_id:
+                times_por_id[time_id] = {
+                    "id": time_id,
+                    "nome": time.get("nome"),
+                    "pais": time.get("pais"),
+                    "logo": time.get("logo"),
+                    "competicoes": []
+                }
+
+            if nome_competicao not in times_por_id[time_id]["competicoes"]:
+                times_por_id[time_id]["competicoes"].append(
+                    nome_competicao
+                )
+
+    times = sorted(
+        times_por_id.values(),
+        key=lambda time: (time.get("nome") or "").casefold()
+    )
+
+    return {
+        "times": times,
+        "avisos": avisos
+    }
 
 
 def buscar_competicoes_do_time(nome_time):
