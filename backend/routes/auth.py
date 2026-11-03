@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from backend.database.models import Usuario
+from backend.database.models import Usuario, Perfil
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from backend.database.connection import get_db
 from backend.schemas.auth import (
@@ -9,6 +11,7 @@ from backend.schemas.auth import (
     LoginRequest,
     AuthResponse,
     UsuarioResponse,
+    AtualizarPerfilRequest,
 )
 from backend.services.auth_service import (
     cadastrar_usuario,
@@ -136,9 +139,99 @@ def login_usuario(
 )
 def obter_usuario_autenticado(
     usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+
+    perfil = db.scalar(
+        select(Perfil).where(Perfil.usuario_id == usuario.id)
+    )
+
     return UsuarioResponse(
         id=str(usuario.id),
         nome=usuario.nome,
         email=usuario.email,
+        data_nascimento=usuario.data_nascimento,
+        apelido=perfil.apelido if perfil else None,
+        time_coracao_id=perfil.time_coracao_id if perfil else None,
     )
+
+@router.put("/me", response_model=UsuarioResponse)
+def atualizar_perfil(
+    dados: AtualizarPerfilRequest,
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        # Obtém somente os campos enviados pelo frontend.
+        atualizacoes = dados.model_dump(exclude_unset=True)
+
+        # Localiza o perfil já criado durante o cadastro.
+        perfil = db.scalar(
+            select(Perfil).where(Perfil.usuario_id == usuario.id)
+        )
+
+        if not perfil:
+            raise HTTPException(
+                status_code=404,
+                detail="Perfil do usuário não encontrado.",
+            )
+
+        # Atualiza os dados da tabela usuarios.
+        if "nome" in atualizacoes:
+            usuario.nome = atualizacoes["nome"]
+
+        if "data_nascimento" in atualizacoes:
+            usuario.data_nascimento = atualizacoes["data_nascimento"]
+
+        if "email" in atualizacoes:
+            novo_email = str(atualizacoes["email"]).strip().lower()
+
+            # Verifica se outro usuário já utiliza esse e-mail.
+            outro_usuario = db.scalar(
+                select(Usuario).where(
+                    Usuario.email == novo_email,
+                    Usuario.id != usuario.id,
+                )
+            )
+
+            if outro_usuario:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Este e-mail já está sendo utilizado.",
+                )
+
+            usuario.email = novo_email
+
+        # Atualiza os dados da tabela perfis.
+        if "apelido" in atualizacoes:
+            perfil.apelido = atualizacoes["apelido"]
+
+        if "time_coracao_id" in atualizacoes:
+            perfil.time_coracao_id = atualizacoes["time_coracao_id"]
+
+        db.commit()
+        db.refresh(usuario)
+
+        return UsuarioResponse(
+            id=str(usuario.id),
+            nome=usuario.nome,
+            email=usuario.email,
+        )
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Não foi possível atualizar os dados. Verifique se o e-mail já está em uso.",
+        )
+
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível atualizar o perfil.",
+        )
