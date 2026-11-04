@@ -50,6 +50,9 @@ class AlterarSenhaRequest(BaseModel):
 
         return valor
 
+class ExcluirContaRequest(BaseModel):
+    senha: str = Field(min_length=1)
+
 class TimeCoracaoResponse(BaseModel):
     id: int
     nome: str

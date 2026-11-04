@@ -2,6 +2,7 @@ import cloudinary
 import os
 import cloudinary.api
 from cloudinary import uploader
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()  
@@ -40,3 +41,39 @@ def enviar_imagem_cloudinary(arquivo):
         "url": resultado["secure_url"],
         "public_id": resultado["public_id"],
     }
+
+def excluir_imagem_cloudinary(public_id: str):
+    """
+    Remove uma imagem hospedada no Cloudinary
+    utilizando seu public_id.
+    """
+    resultado = uploader.destroy(
+        public_id,
+        resource_type="image",
+    )
+
+    return resultado
+
+def excluir_imagem_por_url(url: str):
+    """
+    Recupera o public_id de uma URL gerada pelo nosso
+    serviço de upload e remove a imagem do Cloudinary.
+    """
+    if not url:
+        return None
+
+    caminho = urlparse(url).path
+
+    if "/upload/" not in caminho:
+        raise ValueError("URL do Cloudinary inválida.")
+
+    public_id = caminho.split("/upload/", 1)[1]
+
+    partes = public_id.split("/", 1)
+
+    if partes[0].startswith("v") and partes[0][1:].isdigit():
+        public_id = partes[1]
+
+    public_id = public_id.rsplit(".", 1)[0]
+
+    return excluir_imagem_cloudinary(public_id)

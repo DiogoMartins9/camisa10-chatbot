@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from backend.services.football_api import buscar_times_todas_competicoes
 from fastapi import UploadFile, File
-from backend.services.cloudinary_service import enviar_imagem_cloudinary
+from backend.services.cloudinary_service import (enviar_imagem_cloudinary, excluir_imagem_por_url)
 
 from backend.database.connection import get_db
 from backend.schemas.auth import (
@@ -16,6 +16,7 @@ from backend.schemas.auth import (
     UsuarioResponse,
     AtualizarPerfilRequest,
     AlterarSenhaRequest,
+    ExcluirContaRequest,
 )
 from backend.services.auth_service import (
     cadastrar_usuario,
@@ -336,6 +337,73 @@ def atualizar_foto_perfil(
 
     finally:
         arquivo.file.close()
+
+@router.delete("/me")
+def excluir_conta(
+    dados: ExcluirContaRequest,
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        # Confere a senha antes de permitir a exclusão.
+        if not verificar_senha(
+            dados.senha,
+            usuario.senha_hash,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="A senha informada está incorreta.",
+            )
+
+        # Exclui a conta principal.
+        # O PostgreSQL remove os registros relacionados
+        # por meio das chaves estrangeiras ON DELETE CASCADE.
+
+        perfil = db.scalar(
+            select(Perfil).where(Perfil.usuario_id == usuario.id)
+        )
+
+        avatar_url = perfil.avatar_url if perfil else None
+
+        db.delete(usuario)
+        db.commit()
+
+        if avatar_url:
+            try:
+                resultado_cloudinary = excluir_imagem_por_url(avatar_url)
+
+                if resultado_cloudinary and resultado_cloudinary.get("result") not in {
+                    "ok",
+                    "not found",
+                }:
+                    print(
+                        "Cloudinary não confirmou a exclusão:",
+                        resultado_cloudinary,
+                    )
+
+            except Exception as erro:
+                print(
+                    "Conta excluída, mas não foi possível remover "
+                    "a foto do Cloudinary:",
+                    erro
+                )
+
+        return {
+            "message": "Conta excluída com sucesso."
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as erro:
+        db.rollback()
+        print("Erro ao excluir conta:", erro)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível excluir a conta.",
+        )
 
 @router.put("/me/senha")
 def alterar_senha(
