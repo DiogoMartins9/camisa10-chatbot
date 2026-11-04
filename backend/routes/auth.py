@@ -15,12 +15,14 @@ from backend.schemas.auth import (
     AuthResponse,
     UsuarioResponse,
     AtualizarPerfilRequest,
+    AlterarSenhaRequest,
 )
 from backend.services.auth_service import (
     cadastrar_usuario,
     verificar_senha,
     criar_token_acesso,
     validar_token_acesso,
+    password_hasher,
 )
 
 
@@ -334,3 +336,54 @@ def atualizar_foto_perfil(
 
     finally:
         arquivo.file.close()
+
+@router.put("/me/senha")
+def alterar_senha(
+    dados: AlterarSenhaRequest,
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        # Confere se a senha atual está correta.
+        if not verificar_senha(
+            dados.senha_atual,
+            usuario.senha_hash,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="A senha atual está incorreta.",
+            )
+
+        # Impede que o usuário reutilize a mesma senha.
+        if verificar_senha(
+            dados.nova_senha,
+            usuario.senha_hash,
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="A nova senha deve ser diferente da senha atual.",
+            )
+
+        # Gera um novo hash usando Argon2.
+        usuario.senha_hash = password_hasher.hash(
+            dados.nova_senha
+        )
+
+        db.commit()
+
+        return {
+            "message": "Senha alterada com sucesso."
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as erro:
+        db.rollback()
+        print("Erro ao alterar senha:", erro)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível alterar a senha.",
+        )

@@ -38,6 +38,18 @@ class LoginRequest(BaseModel):
     email: EmailStr
     senha: str = Field(min_length=1)
 
+class AlterarSenhaRequest(BaseModel):
+    senha_atual: str = Field(min_length=1)
+    nova_senha: str = Field(min_length=8)
+
+    @field_validator("nova_senha")
+    @classmethod
+    def validar_nova_senha(cls, valor: str) -> str:
+        if not valor.strip():
+            raise ValueError("A nova senha não pode ficar vazia.")
+
+        return valor
+
 class TimeCoracaoResponse(BaseModel):
     id: int
     nome: str
