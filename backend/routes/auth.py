@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from sqlalchemy.orm import Session
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from backend.database.models import Usuario, Perfil
@@ -24,6 +24,8 @@ from backend.services.auth_service import (
     criar_token_acesso,
     validar_token_acesso,
     password_hasher,
+    validar_token_google,
+    obter_ou_criar_usuario_google,
 )
 
 
@@ -138,6 +140,77 @@ def login_usuario(
             email=usuario.email,
         ),
     )
+
+@router.post(
+    "/google",
+    response_model=AuthResponse,
+)
+def login_google(
+    dados: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    token_google = dados.get("id_token")
+
+    if not token_google:
+        raise HTTPException(
+            status_code=400,
+            detail="Token Google não informado.",
+        )
+
+    # Valida a identidade recebida do Google.
+    try:
+        dados_google = validar_token_google(token_google)
+
+    except ValueError:
+        raise HTTPException(
+            status_code=401,
+            detail="Token Google inválido ou expirado.",
+        )
+
+    # Localiza ou cadastra o usuário.
+    try:
+        usuario = obter_ou_criar_usuario_google(
+            db=db,
+            dados_google=dados_google,
+        )
+
+        token_camisa10 = criar_token_acesso(usuario)
+
+        db.commit()
+
+        return AuthResponse(
+            access_token=token_camisa10,
+            usuario=UsuarioResponse(
+                id=str(usuario.id),
+                nome=usuario.nome,
+                email=usuario.email,
+            ),
+        )
+
+    except ValueError as erro:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail=str(erro),
+        )
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Não foi possível criar a conta Google. Tente novamente.",
+        )
+
+    except Exception as erro:
+        db.rollback()
+        print("Erro no login Google:", erro)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível realizar o login com Google.",
+        )
 
 def buscar_dados_time_coracao(time_coracao_id: str | None):
     """

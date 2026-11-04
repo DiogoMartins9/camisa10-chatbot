@@ -5,6 +5,11 @@ from sqlalchemy.exc import IntegrityError
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, VerificationError
 
+from google.oauth2 import id_token
+from google.auth.transport import requests
+
+import secrets
+
 from backend.database.models import (
     Usuario,
     Perfil,
@@ -17,6 +22,39 @@ from datetime import datetime, timedelta, timezone, date
 import jwt
 
 password_hasher = PasswordHasher()
+
+def validar_token_google(token: str) -> dict:
+    """
+    Valida o ID Token emitido pelo Google e retorna
+    os dados básicos do usuário autenticado.
+    """
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+
+    if not client_id:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID não configurado."
+        )
+
+    try:
+        dados_token = id_token.verify_oauth2_token(
+            token,
+            requests.Request(),
+            audience=client_id,
+        )
+
+        return {
+            "google_id": dados_token["sub"],
+            "email": dados_token["email"].strip().lower(),
+            "nome": dados_token.get("name", ""),
+            "email_verificado": dados_token.get(
+                "email_verified", False
+            ),
+        }
+
+    except ValueError:
+        raise ValueError(
+            "Token do Google inválido ou expirado."
+        )
 
 def cadastrar_usuario(
         db: Session, 
@@ -68,6 +106,68 @@ def cadastrar_usuario(
     except Exception:
         db.rollback()
         raise
+
+def obter_ou_criar_usuario_google(
+        db: Session,
+        dados_google: dict,
+) -> Usuario:
+
+    google_id = dados_google["google_id"]
+    email = dados_google["email"]
+    nome = dados_google["nome"]
+
+    if not dados_google["email_verificado"]:
+        raise ValueError(
+            "O e-mail da conta Google não foi verificado."
+        )
+
+    usuario = db.scalar(
+        select(Usuario).where(
+            Usuario.google_id == google_id
+        )
+    )
+
+    if usuario:
+        return usuario
+
+    usuario_existente = db.scalar(
+        select(Usuario).where(
+            Usuario.email == email
+        )
+    )
+
+    if usuario_existente:
+        raise ValueError(
+            "Este e-mail já possui cadastro."
+            "Entre com sua senha para acessar essa conta."
+        )
+
+    senha_hash = password_hasher.hash(
+        secrets.token_urlsafe(32)
+    )
+
+    usuario = Usuario(
+        nome=nome or email.split("@")[0],
+        email=email,
+        google_id=google_id,
+        senha_hash=senha_hash,
+        data_nascimento=None,
+    )
+
+    db.add(usuario)
+    db.flush()
+
+    perfil = Perfil(
+        usuario_id=usuario.id
+    )
+
+    configuracoes = ConfiguracaoAcessibilidade(
+        usuario_id=usuario.id
+    )
+
+    db.add_all([perfil, configuracoes])
+
+    return usuario
 
 def verificar_senha(
         senha: str,
