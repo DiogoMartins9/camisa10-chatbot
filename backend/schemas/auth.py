@@ -53,6 +53,7 @@ class UsuarioResponse(BaseModel):
     email: EmailStr
     data_nascimento: date | None = None
     apelido: str | None = None
+    avatar_url: str | None = None
     time_coracao_id: str | None = None
     time_coracao: TimeCoracaoResponse | None = None
 

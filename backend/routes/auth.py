@@ -5,6 +5,8 @@ from backend.database.models import Usuario, Perfil
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from backend.services.football_api import buscar_times_todas_competicoes
+from fastapi import UploadFile, File
+from backend.services.cloudinary_service import enviar_imagem_cloudinary
 
 from backend.database.connection import get_db
 from backend.schemas.auth import (
@@ -175,6 +177,7 @@ def obter_usuario_autenticado(
         email=usuario.email,
         data_nascimento=usuario.data_nascimento,
         apelido=perfil.apelido if perfil else None,
+        avatar_url=perfil.avatar_url if perfil else None,
         time_coracao_id=perfil.time_coracao_id if perfil else None,
         time_coracao=buscar_dados_time_coracao(
             perfil.time_coracao_id if perfil else None
@@ -264,3 +267,70 @@ def atualizar_perfil(
             status_code=500,
             detail="Não foi possível atualizar o perfil.",
         )
+
+@router.post("/me/foto")
+def atualizar_foto_perfil(
+    arquivo: UploadFile = File(...),
+    usuario: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        tipos_permitidos = [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+        ]
+
+        if arquivo.content_type not in tipos_permitidos:
+            raise HTTPException(
+                status_code=400,
+                detail="Formato de imagem não permitido. Envie uma imagem JPEG, PNG ou WEBP.",
+            )
+
+        conteudo = arquivo.file.read()
+
+        if len(conteudo) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=400,
+                detail="O tamanho da imagem não pode exceder 5 MB.",
+            )
+
+        arquivo.file.seek(0)
+
+        perfil = db.scalar(
+            select(Perfil).where(Perfil.usuario_id == usuario.id)
+        )
+
+        if not perfil:
+            raise HTTPException(
+                status_code=404,
+                detail="Perfil do usuário não encontrado.",
+            )
+
+        resultado = enviar_imagem_cloudinary(arquivo)
+
+        perfil.avatar_url = resultado["url"]
+
+        db.commit()
+        db.refresh(perfil)
+
+        return {
+            "message": "Foto de perfil atualizada com sucesso.",
+            "avatar_url": perfil.avatar_url,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except Exception as erro:
+        db.rollback()
+        print("Erro ao atualizar a foto de perfil:", erro)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível atualizar a foto de perfil.",
+        )
+
+    finally:
+        arquivo.file.close()
