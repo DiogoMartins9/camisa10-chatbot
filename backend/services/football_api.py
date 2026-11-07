@@ -101,44 +101,87 @@ def nome_time_portugues(nome):
 
     return traducoes.get(nome, nome)
 
-def buscar_time(nome_time):
+def buscar_time(nome_time, pais=None):
+    """
+    Localiza um time na API-Football pelo nome e, opcionalmente,
+    valida o país para evitar correspondências incorretas.
+    """
+
+    if not API_KEY:
+        return {
+            "erro": "A chave API_FOOTBALL_KEY não foi configurada."
+        }
+
+    if not nome_time:
+        return {
+            "erro": "O nome do time não foi informado."
+        }
+
     url = f"{BASE_URL}/teams"
 
     params = {
-        "search": nome_time.replace("-", " ")
+        "search": (
+            unicodedata
+            .normalize("NFD", nome_time)
+            .encode("ascii", "ignore")
+            .decode("utf-8")
+        )
     }
 
     headers = {
         "x-apisports-key": API_KEY
     }
 
-    resposta = requests.get(url, headers=headers, params=params)
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=20
+        )
 
-    dados = resposta.json()
+        resposta.raise_for_status()
+        dados = resposta.json()
 
-    if dados["errors"]:
+    except requests.RequestException:
+        return {
+            "erro": "Não foi possível consultar a API-Football."
+        }
+
+    except ValueError:
+        return {
+            "erro": "A API-Football retornou uma resposta inválida."
+        }
+
+    if dados.get("errors"):
         return {
             "erro": dados["errors"]
         }
 
-    for item in dados["response"]:
-        time = item["team"]
+    nome_buscado = normalizar_nome_time(nome_time)
 
-        nome_api = time["name"].lower()
-        nome_buscado = nome_time.lower()
+    for item in dados.get("response", []):
+        time = item.get("team", {})
 
-        nome_api = nome_api.replace("-", " ")
-        nome_buscado = nome_buscado.replace("-", " ")
+        nome_api = normalizar_nome_time(time.get("name"))
 
-        if nome_api == nome_buscado:
-            return {
-                "id": time["id"],
-                "nome": time["name"],
-                "pais": time["country"]
-            }
+        if nome_api != nome_buscado:
+            continue
+
+        pais_api = normalizar_nome_time(time.get("country"))
+        pais_buscado = normalizar_nome_time(pais) if pais else None
+
+        if pais_buscado and pais_api != pais_buscado:
+            continue
+
+        return {
+            "id": time.get("id"),
+            "nome": time.get("name"),
+            "pais": time.get("country")
+        }
 
     return {
-        "erro": f"Time '{nome_time}' não encontrado."
+        "erro": f"Time '{nome_time}' não encontrado na API-Football."
     }
 
 _CACHE_TIMES_PRINCIPAIS = {
@@ -321,6 +364,15 @@ def buscar_times_principais_competicoes(season=2026):
 #print(buscar_time("Sao Paulo"))
 
 def buscar_jogos_time(team_id, status):
+    chave_cache = ("time", team_id, status)
+    agora_cache = time.time()
+
+    if chave_cache in _CACHE_JOGOS:
+        horario, resultado_cache = _CACHE_JOGOS[chave_cache]
+
+        if agora_cache - horario < _TEMPO_CACHE:
+            return resultado_cache
+        
     url = f"https://api.football-data.org/v4/teams/{team_id}/matches"
 
     headers = {
@@ -392,6 +444,8 @@ def buscar_jogos_time(team_id, status):
             "penaltis_visitante": penaltis_visitante
 
         })
+
+    _CACHE_JOGOS[chave_cache] = (time.time(), resultado)
 
     return resultado
 
@@ -621,6 +675,9 @@ def buscar_times_todas_competicoes():
 
     competicoes = buscar_competicoes_football_data()
 
+    if isinstance(competicoes, dict) and competicoes.get("erro"):
+        return competicoes
+
     codigos_permitidos = {
         "BSA",  # Brasileirão Série A
         "PL",   # Premier League
@@ -637,12 +694,6 @@ def buscar_times_todas_competicoes():
         for competicao in competicoes
         if competicao.get("codigo") in codigos_permitidos
     ]
-
-    if isinstance(competicoes, dict) and competicoes.get("erro"):
-        return {
-            "times": [],
-            "avisos": [competicoes["erro"]]
-        }
 
     times_por_id = {}
     avisos = []

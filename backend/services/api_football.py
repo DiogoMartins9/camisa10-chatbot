@@ -1,6 +1,6 @@
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from functools import lru_cache
 
 import requests
@@ -80,6 +80,103 @@ def buscar_jogos_por_data(data_jogo: str) -> dict:
 
     return {
         "data": data_jogo,
+        "quantidade": len(jogos),
+        "jogos": jogos
+    }
+
+def buscar_jogos_por_time(time_id: int, tipo: str) -> dict:
+    """
+    Busca partidas de um time específico.
+
+    tipo pode ser:
+    - live: partidas em andamento
+    - next: próxima partida
+    -last: última partida
+    """
+
+    if not API_FOOTBALL_KEY:
+        return {
+            "erro": "A variável API_FOOTBALL_KEY não está configurada."
+        }
+
+    hoje = date.today()
+
+    filtros = {
+        "live": {"live": "all"},
+        "next": {
+            "from": hoje.isoformat(),
+            "to": (hoje + timedelta(days=3)).isoformat()
+        },
+        "last": {"last": 1}
+    }
+    
+    if tipo not in filtros:
+        return {
+            "erro": "Tipo de consulta inválido."
+        }
+
+    parametros = {
+        "team": time_id,
+        "season": hoje.year,
+        "timezone": "America/Sao_Paulo",
+        **filtros[tipo]
+    }
+
+    try:
+        resposta = requests.get(
+            f"{API_FOOTBALL_URL}/fixtures",
+            headers={
+                "x-apisports-key": API_FOOTBALL_KEY
+            },
+            params=parametros,
+            timeout=20
+        )
+
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+    except requests.RequestException:
+        return {
+            "erro": "Não foi possível consultar a API-Football."
+        }
+
+    if dados.get("errors"):
+        return {
+            "erro": "A API-Football retornou um erro.",
+            "detalhes": dados["errors"]
+        }
+
+    jogos = []
+
+    for item in dados.get("response", []):
+        fixture = item.get("fixture", {})
+        league = item.get("league", {})
+        teams = item.get("teams", {})
+        goals = item.get("goals", {})
+        status = fixture.get("status", {})
+
+        mandante = teams.get("home", {})
+        visitante = teams.get("away", {})
+
+        jogos.append({
+            "id": fixture.get("id"),
+            "data": fixture.get("date"),
+            "status": status.get("short"),
+            "status_descricao": status.get("long"),
+            "competicao": league.get("name"),
+            "pais": league.get("country"),
+            "logo_competicao": league.get("logo"),
+            "mandante": mandante.get("name"),
+            "logo_mandante": mandante.get("logo"),
+            "visitante": visitante.get("name"),
+            "logo_visitante": visitante.get("logo"),
+            "gols_mandante": goals.get("home"),
+            "gols_visitante": goals.get("away"),
+            "estadio": fixture.get("venue", {}).get("name")
+        })
+
+    return {
+        "tipo": tipo,
         "quantidade": len(jogos),
         "jogos": jogos
     }

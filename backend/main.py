@@ -12,12 +12,14 @@ from backend.knowledge.external_research import (identificar_escopo_estatistico,
 from backend.services.api_football import buscar_jogos_por_data
 from fastapi.concurrency import run_in_threadpool
 from backend.routes.auth import router as auth_router
+from backend.routes.home import router as home_router
 import requests
 import re
 import json
 
 app = FastAPI()
 app.include_router(auth_router)
+app.include_router(home_router)
 
 @app.get("/api/times")
 async def listar_times():
