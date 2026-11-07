@@ -1,12 +1,10 @@
 
-from backend.database.connection import testar_conexao
+from backend.database.connection import testar_conexao as verificar_conexao
 
-try:
-    resultado = testar_conexao()
 
-    if resultado == 1:
-        print("Conexão com o Neon estabelecida com sucesso!")
+def test_conexao_com_neon():
+    resultado = verificar_conexao()
 
-except Exception as erro:
-    print("Não foi possível conectar ao Neon.")
-    print(f"Erro: {erro}")
+    assert resultado == 1, "A conexão com o Neon não foi estabelecida."
+
+    print("Conexão com o Neon estabelecida com sucesso!")
