@@ -436,10 +436,14 @@ def buscar_jogos_time(team_id, status):
             "status": partida["status"],
             "competicao": partida["competition"]["name"],
             "codigo_competicao": partida["competition"]["code"],
+            "logo_competicao": partida["competition"].get("emblem"),
             "mandante": partida["homeTeam"]["name"],
+            "escudo_mandante": partida["homeTeam"].get("crest"),
             "visitante": partida["awayTeam"]["name"],
+            "escudo_visitante": partida["awayTeam"].get("crest"),
             "gols_mandante": gols_mandante,
             "gols_visitante": gols_visitante,
+            "estadio": partida.get("venue"),
             "penaltis_mandante": penaltis_mandante,
             "penaltis_visitante": penaltis_visitante
 
