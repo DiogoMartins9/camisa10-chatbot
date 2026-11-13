@@ -14,6 +14,7 @@ from fastapi.concurrency import run_in_threadpool
 from backend.routes.auth import router as auth_router
 from backend.routes.home import router as home_router
 from backend.routes.news import router as news_router
+from backend.routes.quiz import router as quiz_router
 import requests
 import re
 import json
@@ -22,6 +23,7 @@ app = FastAPI()
 app.include_router(auth_router)
 app.include_router(home_router)
 app.include_router(news_router)
+app.include_router(quiz_router)
 
 @app.get("/api/times")
 async def listar_times():
