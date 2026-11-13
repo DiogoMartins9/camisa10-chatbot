@@ -137,6 +137,11 @@ class Quiz(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    codigo: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+    )
     titulo: Mapped[str] = mapped_column(String(150), nullable=False)
     categoria: Mapped[str | None] = mapped_column(String(100))
     total_perguntas: Mapped[int] = mapped_column(
