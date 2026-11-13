@@ -37,3 +37,17 @@ class ResultadoQuizResponse(BaseModel):
     pontuacao: int
     xp_total: int
     resultados: list[ResultadoPerguntaResponse]
+
+class EstatisticasGamificacaoResponse(BaseModel):
+    xp_total: int
+    nivel: int
+    xp_inicio_nivel: int
+    xp_proximo_nivel: int
+    xp_atual_nivel: int
+    xp_necessario_nivel: int
+    progresso_nivel: float
+    quizzes_concluidos: int
+    quizzes_diferentes: int
+    perguntas_respondidas: int
+    acertos: int
+    taxa_acerto: float
