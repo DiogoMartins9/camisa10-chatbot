@@ -13,9 +13,8 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-
 
 class Base(DeclarativeBase):
     pass
@@ -183,3 +182,111 @@ class ProgressoJogo(Base):
     ultima_participacao: Mapped[DateTime] = mapped_column(
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
+
+class PerguntaQuiz(Base):
+    __tablename__ = "perguntas_quiz"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "quiz_id",
+            "ordem",
+            name="uq_pergunta_quiz_ordem",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("quizzes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    enunciado: Mapped[str] = mapped_column(Text, nullable=False)
+    alternativas: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False
+    )
+    resposta_correta: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    explicacao: Mapped[str] = mapped_column(Text, nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class TentativaQuiz(Base):
+    __tablename__ = "tentativas_quiz"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    usuario_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("quizzes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    acertos: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    pontuacao: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    xp_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    finalizada: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    iniciada_em: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+    finalizada_em: Mapped[DateTime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
+
+class RespostaQuiz(Base):
+    __tablename__ = "respostas_quiz"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tentativa_id",
+            "pergunta_id",
+            name="uq_resposta_tentativa_pergunta",
+        ),
+        CheckConstraint(
+            "resposta_selecionada >= 0",
+            name="ck_resposta_quiz_indice",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tentativa_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tentativas_quiz.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    pergunta_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("perguntas_quiz.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    resposta_selecionada: Mapped[int] = mapped_column(
+        Integer, nullable=False
+    )
+    correta: Mapped[bool] = mapped_column(
+        Boolean, nullable=False
+    )
+    xp_ganho: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    respondida_em: Mapped[DateTime] = mapped_column(
+        DateTime, nullable=False, server_default=func.current_timestamp()
+    )
+
