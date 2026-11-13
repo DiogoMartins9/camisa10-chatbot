@@ -1,7 +1,11 @@
-from datetime import datetime
+
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
+from sqlalchemy.dialects.postgresql import insert
 
 from backend.database.connection import get_db
 from backend.database.models import (
@@ -9,6 +13,7 @@ from backend.database.models import (
     PerguntaQuiz,
     TentativaQuiz,
     RespostaQuiz,
+    SequenciaQuiz,
 )
 from backend.schemas.quiz import (
     QuizResponse,
@@ -17,13 +22,22 @@ from backend.schemas.quiz import (
     ResultadoQuizResponse,
     ResultadoPerguntaResponse,
     EstatisticasGamificacaoResponse,
+    SequenciaQuizResponse,
 )
 from backend.routes.auth import get_current_user
+
 
 router = APIRouter(
     prefix="/api/quiz",
     tags=["Quizzes"],
 )
+
+FUSO_BRASILIA = ZoneInfo("America/Sao_Paulo")
+
+
+def obter_data_brasilia() -> date:
+    return datetime.now(FUSO_BRASILIA).date()
+
 
 def calcular_nivel(xp_total: int) -> dict:
     xp_total = max(0, int(xp_total))
@@ -71,6 +85,63 @@ def calcular_nivel(xp_total: int) -> dict:
         "progresso_nivel": round(progresso_nivel, 2),
     }
 
+
+def atualizar_sequencia(
+    usuario_id,
+    db: Session,
+) -> dict:
+    hoje = obter_data_brasilia()
+    ontem = hoje - timedelta(days=1)
+
+    tabela = SequenciaQuiz.__table__
+
+    sequencia_nova = case(
+        (
+            tabela.c.ultima_participacao == hoje,
+            tabela.c.sequencia_atual,
+        ),
+        (
+            tabela.c.ultima_participacao == ontem,
+            tabela.c.sequencia_atual + 1,
+        ),
+        else_=1,
+    )
+
+    maior_sequencia_nova = func.greatest(
+        tabela.c.maior_sequencia,
+        sequencia_nova,
+    )
+
+    comando = insert(SequenciaQuiz).values(
+        usuario_id=usuario_id,
+        sequencia_atual=1,
+        maior_sequencia=1,
+        ultima_participacao=hoje,
+    )
+
+    comando = comando.on_conflict_do_update(
+        index_elements=[tabela.c.usuario_id],
+        set_={
+            "sequencia_atual": sequencia_nova,
+            "maior_sequencia": maior_sequencia_nova,
+            "ultima_participacao": hoje,
+            "atualizado_em": func.current_timestamp(),
+        },
+    ).returning(
+        tabela.c.sequencia_atual,
+        tabela.c.maior_sequencia,
+        tabela.c.ultima_participacao,
+    )
+
+    resultado = db.execute(comando).one()
+
+    return {
+        "sequencia_atual": resultado.sequencia_atual,
+        "maior_sequencia": resultado.maior_sequencia,
+        "ultima_participacao": resultado.ultima_participacao,
+    }
+
+
 @router.get("/", response_model=list[QuizResponse])
 def listar_quizzes(
     usuario=Depends(get_current_user),
@@ -84,6 +155,7 @@ def listar_quizzes(
 
     return quizzes
 
+
 @router.get(
     "/estatisticas",
     response_model=EstatisticasGamificacaoResponse,
@@ -92,7 +164,6 @@ def obter_estatisticas(
     usuario=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Busca as estatísticas das tentativas finalizadas do usuário.
     resumo = (
         db.query(
             func.count(TentativaQuiz.id).label("quizzes_concluidos"),
@@ -113,7 +184,6 @@ def obter_estatisticas(
         .one()
     )
 
-    # Conta as perguntas respondidas nas tentativas finalizadas.
     perguntas_respondidas = (
         db.query(func.count(RespostaQuiz.id))
         .join(
@@ -130,7 +200,6 @@ def obter_estatisticas(
     acertos = int(resumo.acertos)
     total = int(perguntas_respondidas)
 
-    # Calcula a taxa de acerto.
     taxa_acerto = (
         (acertos / total) * 100
         if total > 0
@@ -138,7 +207,6 @@ def obter_estatisticas(
     )
 
     xp_total = int(resumo.xp_total)
-
     dados_nivel = calcular_nivel(xp_total)
 
     return EstatisticasGamificacaoResponse(
@@ -151,7 +219,47 @@ def obter_estatisticas(
         taxa_acerto=round(taxa_acerto, 2),
     )
 
-@router.get("/{codigo}/perguntas", response_model=list[PerguntaResponse])
+
+@router.get(
+    "/sequencia",
+    response_model=SequenciaQuizResponse,
+)
+def obter_sequencia(
+    usuario=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    registro = (
+        db.query(SequenciaQuiz)
+        .filter(SequenciaQuiz.usuario_id == usuario.id)
+        .first()
+    )
+
+    if not registro:
+        return {
+            "sequencia_atual": 0,
+            "maior_sequencia": 0,
+            "ultima_participacao": None,
+        }
+
+    hoje = obter_data_brasilia()
+    ontem = hoje - timedelta(days=1)
+
+    sequencia_atual = registro.sequencia_atual
+
+    if registro.ultima_participacao not in (hoje, ontem):
+        sequencia_atual = 0
+
+    return {
+        "sequencia_atual": sequencia_atual,
+        "maior_sequencia": registro.maior_sequencia,
+        "ultima_participacao": registro.ultima_participacao,
+    }
+
+
+@router.get(
+    "/{codigo}/perguntas",
+    response_model=list[PerguntaResponse],
+)
 def listar_perguntas(
     codigo: str,
     usuario=Depends(get_current_user),
@@ -178,6 +286,7 @@ def listar_perguntas(
 
     return perguntas
 
+
 @router.post(
     "/responder",
     response_model=ResultadoQuizResponse,
@@ -199,7 +308,6 @@ def responder_quiz(
             detail="Quiz não encontrado.",
         )
 
-    # Verifica se existem perguntas duplicadas no envio.
     ids_perguntas = [
         resposta.pergunta_id for resposta in dados.respostas
     ]
@@ -229,14 +337,21 @@ def responder_quiz(
         pergunta.id: pergunta for pergunta in perguntas
     }
 
-    # Confere se todas as perguntas do quiz foram respondidas.
     if len(dados.respostas) != quiz.total_perguntas:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Responda todas as perguntas do quiz.",
         )
 
-    # Cria uma tentativa.
+    for resposta in dados.respostas:
+        pergunta = perguntas_por_id[resposta.pergunta_id]
+
+        if resposta.resposta_selecionada >= len(pergunta.alternativas):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Índice de alternativa inválido.",
+            )
+
     tentativa = TentativaQuiz(
         usuario_id=usuario.id,
         quiz_id=quiz.id,
@@ -252,12 +367,6 @@ def responder_quiz(
 
     for resposta in dados.respostas:
         pergunta = perguntas_por_id[resposta.pergunta_id]
-
-        if resposta.resposta_selecionada >= len(pergunta.alternativas):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Índice de alternativa inválido.",
-            )
 
         correta = (
             resposta.resposta_selecionada == pergunta.resposta_correta
@@ -296,6 +405,12 @@ def responder_quiz(
     tentativa.finalizada = True
     tentativa.finalizada_em = datetime.now()
 
+    # Atualiza a sequência diária na mesma transação do quiz.
+    dados_sequencia = atualizar_sequencia(
+        usuario_id=usuario.id,
+        db=db
+    )
+
     db.commit()
     db.refresh(tentativa)
 
@@ -306,4 +421,5 @@ def responder_quiz(
         pontuacao=acertos,
         xp_total=xp_total,
         resultados=resultados,
+        **dados_sequencia,
     )

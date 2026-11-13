@@ -290,3 +290,60 @@ class RespostaQuiz(Base):
         DateTime, nullable=False, server_default=func.current_timestamp()
     )
 
+
+class SequenciaQuiz(Base):
+    __tablename__ = "sequencias_quiz"
+
+    __table_args__ = (
+        CheckConstraint(
+            "sequencia_atual >= 0",
+            name="ck_sequencia_atual",
+        ),
+        CheckConstraint(
+            "maior_sequencia >= 0",
+            name="ck_maior_sequencia",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    usuario_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    sequencia_atual: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+
+    maior_sequencia: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="0",
+    )
+
+    ultima_participacao: Mapped[Date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    criado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )

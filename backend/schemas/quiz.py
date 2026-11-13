@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
+from datetime import date
 
 class QuizResponse(BaseModel):
     id: UUID
@@ -37,6 +38,14 @@ class ResultadoQuizResponse(BaseModel):
     pontuacao: int
     xp_total: int
     resultados: list[ResultadoPerguntaResponse]
+    sequencia_atual: int
+    maior_sequencia: int
+    ultima_participacao: date
+
+class SequenciaQuizResponse(BaseModel):
+    sequencia_atual: int
+    maior_sequencia: int
+    ultima_participacao: date | None
 
 class EstatisticasGamificacaoResponse(BaseModel):
     xp_total: int
