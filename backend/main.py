@@ -1871,6 +1871,8 @@ def buscar_conhecimento_tatico(pergunta):
 def gerar_resposta_ollama(pergunta, dados):
 
     intencao_estatistica = identificar_intencao_estatistica(pergunta)
+    print("INTENÇÃO RECEBIDA PELO OLLAMA:", intencao_estatistica)
+    print("PERGUNTA NORMALIZADA:", normalizar_texto(pergunta))
     pergunta_estatistica = intencao_estatistica is not None
     escopo_estatistico = identificar_escopo_estatistico(pergunta)
 
@@ -1937,6 +1939,8 @@ RECORTE OBRIGATÓRIO: TEMPORADA.
 
     tipo_escopo = escopo_estatistico.get("tipo", "")
     instrucoes_escopo = instrucoes_escopo.get(tipo_escopo, "")
+    if intencao_estatistica == "premios_individuais":
+        instrucoes_escopo = ""
 
     if pergunta_estatistica:
         prompt_sistema = """
@@ -2048,6 +2052,59 @@ A pergunta procura explicar diferenças entre números estatísticos.
 - Diferencie gols oficiais e totais gerais quando as fontes permitirem.
 - Não declare um único total universalmente correto sem evidências.
 - Não invente explicações ou números ausentes.
+""",
+        "quantidade_elenco": """
+A pergunta trata da quantidade de jogadores de determinada nacionalidade
+em um elenco de futebol.
+
+Identifique o clube e a nacionalidade solicitada.
+Utilize somente informações presentes nas fontes fornecidas.
+Não confunda jogadores brasileiros com títulos brasileiros.
+Não invente quantidades nem considere jogadores que não aparecem
+nas evidências.
+Se as fontes não permitirem determinar a quantidade com segurança,
+informe que não foi possível confirmar.
+""",
+        "premios_individuais": """
+A pergunta trata de prêmios e reconhecimentos individuais de jogadores.
+
+IDENTIFICAÇÃO:
+- Identifique o jogador e o prêmio mencionado.
+- Diferencie prêmios individuais de títulos coletivos.
+- Considere somente premiações efetivamente conquistadas.
+- Não conte indicações, nomeações ou colocações como vitórias.
+
+CONTAGEM:
+- Conte cada conquista uma única vez, considerando cada edição do prêmio.
+- Não confunda prêmios diferentes que possuem nomes semelhantes.
+- Não confunda Bola de Ouro com The Best FIFA Men's Player.
+- Não confunda Chuteira de Ouro com Bola de Ouro.
+- Não considere uma indicação como prêmio conquistado.
+- Se a pergunta mencionar um prêmio específico, responda somente sobre ele.
+
+LISTAGEM:
+- Se o usuário perguntar quais prêmios o jogador conquistou,
+  organize os resultados por nome da premiação.
+- Evite repetir prêmios com nomes diferentes que representam
+  a mesma conquista.
+- Informe os anos das conquistas quando estiverem disponíveis.
+- Não inclua títulos coletivos, como Champions League,
+  Libertadores e campeonatos nacionais, nessa lista.
+
+CONFIABILIDADE:
+- Utilize somente informações sustentadas pelas fontes fornecidas.
+- Priorize registros oficiais das entidades responsáveis pelos prêmios.
+- Verifique se as fontes se referem ao mesmo prêmio e à mesma categoria.
+- Não invente conquistas, quantidades ou anos.
+- Se as evidências forem insuficientes, informe que não foi possível
+  confirmar a quantidade ou a lista completa.
+- Se houver divergência entre fontes, explique a diferença.
+
+FORMATO:
+- Responda diretamente à pergunta.
+- Seja objetivo e evite informações que não foram solicitadas.
+- Não transforme uma pergunta sobre um prêmio específico
+  em uma biografia completa do jogador.
 """
     }
 
@@ -2058,16 +2115,32 @@ A pergunta procura explicar diferenças entre números estatísticos.
             + instrucoes_por_intencao[intencao_estatistica]
         )
 
-    resposta = ollama.chat(
-        model="llama3.2:3b",
-        messages=[
-            {
-                "role": "system",
-                "content": prompt_sistema
-            },
-            {
-                "role": "user",
-                "content": f"""
+        if intencao_estatistica == "premios_individuais":
+            instrucoes_usuario = f"""
+PERGUNTA ORIGINAL:
+{pergunta}
+
+CONTEXTO DE PESQUISA:
+{contexto}
+
+TAREFA:
+Responda à pergunta original utilizando as evidências do contexto.
+
+REGRAS:
+- Identifique o jogador e o prêmio solicitado.
+- Localize a quantidade explicitamente confirmada pelas fontes.
+- Não transforme a pergunta em outra pergunta.
+- Não faça comparações entre jogadores.
+- Não fale sobre gols, assistências ou títulos coletivos.
+- Não acrescente informações que não foram solicitadas.
+- Se a quantidade estiver confirmada, responda diretamente.
+- Se possível, informe os anos das conquistas.
+- Não invente informações.
+- Responda em português brasileiro, de forma objetiva.
+- Inclua os links das fontes que sustentam a resposta.
+"""
+    else:
+        instrucoes_usuario = f"""
 Pergunta do usuário:
 {pergunta}
 
@@ -2102,6 +2175,17 @@ Instruções finais:
 - Se não for possível comparar os dois jogadores, explique por quê.
 - Escreva a resposta completa em português brasileiro.
 """
+
+    resposta = ollama.chat(
+        model="llama3.2:3b",
+        messages=[
+            {
+                "role": "system",
+                "content": prompt_sistema
+            },
+            {
+                "role": "user",
+                "content": instrucoes_usuario
             }
         ],
         options={
@@ -2120,6 +2204,16 @@ def pergunta_e_de_futebol(pergunta):
         return True
 
     if identificar_dado_classificacao(pergunta) is not None:
+        return True
+
+    intencao_estatistica = identificar_intencao_estatistica(pergunta)
+
+    if intencao_estatistica in {
+        "quantidade",
+        "comparacao",
+        "divergencia",
+        "quantidade_elenco", 
+    }:
         return True
 
     if any(frase in texto for frase in [
@@ -2196,6 +2290,18 @@ def pergunta_e_de_futebol(pergunta):
         "champions",
         "libertadores",
         "copa do mundo",
+        "mundial",
+        "mundiais",
+        "mundial de clubes",
+        "copa intercontinental",
+        "intercontinental",
+        "campeão mundial",
+        "campeao mundial",
+        "campeões mundiais",
+        "campeoes mundiais",
+        "tricampeão mundial",
+        "tricampeao mundial",
+        "campeonato mundial",
         "campeonato",
         "classificação",
         "classificacao",
@@ -2215,7 +2321,36 @@ def pergunta_e_de_futebol(pergunta):
         "lateral",
         "volante",
         "árbitro",
-        "arbitro"
+        "arbitro",
+
+        # Futsal
+        "futsal",
+        "futebol de salão",
+        "regras do futsal",
+        "quadra de futsal",
+        "bola de futsal",
+        "tiro livre direto",
+        "tiro livre indireto",
+        "tiro livre sem barreira",
+        "sexta falta",
+        "quinta falta",
+        "faltas acumuladas",
+        "goleiro-linha",
+        "goleiro linha",
+        "arremesso de meta",
+        "área penal",
+        "area penal",
+        "quatro segundos",
+        "dois tempos de 20 minutos",
+        "substituição volante",
+        "substituicao volante",
+        "passe de calcanhar",
+        "tiro de canto",
+        "tiro lateral",
+        "marca do pênalti",
+        "marca do penalti",
+        "pênalti no futsal",
+        "penalti no futsal"
     ]
 
     if any(palavra in texto for palavra in palavras_futebol):
@@ -2246,10 +2381,27 @@ def pergunta_e_de_futebol(pergunta):
                 ou
                 NÃO
 
-                Responda SIM se a pergunta estiver relacionada ao futebol,
+                Responda SIM se a pergunta estiver relacionada ao futebol ou ao futsal,
                 incluindo jogadores, times, campeonatos, partidas, regras,
                 história do futebol, estatísticas ou assuntos diretamente 
                 relacionados ao esporte.
+
+                Considere como assuntos permitidos:
+
+                - Futebol de campo e futsal.
+                - Jogadores, times, clubes e seleções.
+                - Campeonatos, competições e partidas.
+                - Títulos, conquistas, troféus e histórico dos clubes.
+                - Mundiais de clubes, Copa Intercontinental e títulos internacionais.
+                - Perguntas sobre quantos títulos um clube conquistou.
+                - Regras, arbitragem e infrações.
+                - História do futebol e do futsal.
+                - Estatísticas e recordes.
+                - Táticas, estratégias e fundamentos.
+                - Equipamentos e materiais esportivos.
+                - Treinamentos e preparação física relacionados
+                  ao futebol e ao futsal.
+                - Próximos jogos, resultados e classificações.
 
                 Também responda SIM para as perguntas sobre:
                 - próximo jogo de um time
@@ -2260,7 +2412,19 @@ def pergunta_e_de_futebol(pergunta):
                 - adversário de um time
                 - data ou horário de uma partida
 
-                Responda NÃO se a pergunta não tiver relação com futebol.
+                IMPORTANTE:
+                Perguntas sobre regras específicas do futsal
+                também devem receber SIM.
+
+                Exemplos de perguntas que devem receber SIM:
+                - O que é tiro livre sem barreira?
+                - Quando acontece a sexta falta no futsal?
+                - Qual a diferença entre futebol e futsal?
+                - Quantos jogadores participam de uma partida?
+                - Como funciona o impedimento?
+
+                Responda NÃO somente quando a pergunta
+                não tiver relação com futebol ou futsal.
                 """
             },
             {
@@ -2625,6 +2789,51 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
         "total de gols oficiais",
     ]
 
+    termos_quantidade_elenco = [
+        "quantos brasileiros",
+        "quantas brasileiras",
+        "quantos estrangeiros",
+        "quantas estrangeiras",
+        "quantos argentinos",
+        "quantos portugueses",
+        "quantos uruguaios",
+        "quantos colombianos",
+        "quantos jogadores brasileiros",
+        "quantos jogadores estrangeiros",
+        "quantos jogadores argentinos",
+    ]
+
+    termos_premios_individuais = [
+        "bola de ouro",
+        "bolas de ouro",
+        "the best",
+        "fifa the best",
+        "melhor do mundo",
+        "melhores do mundo",
+        "jogador do ano",
+        "melhor jogador do ano",
+        "melhor jogador do mundo",
+        "melhor do planeta",
+        "chuteira de ouro",
+        "golden boy",
+        "puskas",
+        "premio puskas",
+        "prêmio puskas",
+        "jogador mais valioso",
+        "melhor jogador da temporada",
+        "melhor jogador da competicao",
+        "melhor jogador da competição",
+        "artilheiro da temporada",
+        "artilheiro da competicao",
+        "artilheiro da competição",
+        "premios individuais",
+        "prêmios individuais",
+        "titulos individuais",
+        "títulos individuais",
+        "quantos premios individuais",
+        "quantos prêmios individuais",
+    ]
+
     if any(termo in texto for termo in termos_divergencia):
         return "divergencia"
 
@@ -2633,6 +2842,12 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
 
     if any(termo in texto for termo in termos_quantidade):
         return "quantidade"
+
+    if any(termo in texto for termo in termos_quantidade_elenco):
+        return "quantidade_elenco"
+
+    if any(termo in texto for termo in termos_premios_individuais):
+        return "premios_individuais"
 
     return None
 
@@ -3969,14 +4184,288 @@ MSG_RECORTE_NAO_SUPORTADO = (
     "estar errado."
 )
 
+
+def extrair_quantidade_premio(pergunta: str, resultados: list) -> str | None:
+    """
+    Extrai uma quantidade de conquistas individuais quando ela
+    aparece explicitamente em uma fonte relacionada ao prêmio.
+    """
+
+    texto_pergunta = normalizar_texto(pergunta)
+
+    premios = {
+        "bola de ouro": r"(?:bolas? de ouro|ballon d.?or)",
+        "bolas de ouro": r"(?:bolas? de ouro|ballon d.?or)",
+        "the best": r"(?:the best(?: fifa)?|fifa the best)",
+        "premio puskas": r"(?:premio fifa ferenc puskas|premio puskas|puskas award)",
+        "chuteira de ouro": r"(?:chuteiras? de ouro|golden shoe|golden boot)",
+        "golden boy": r"golden boy",
+    }
+
+    premio_regex = next(
+        (
+            expressao
+            for nome, expressao in premios.items()
+            if nome in texto_pergunta
+        ),
+        None
+    )
+
+    if not premio_regex:
+        return None
+    
+    print("PRÊMIO IDENTIFICADO:", premio_regex)
+    
+    eh_the_best = "the best" in texto_pergunta
+    
+    ordinais_the_best = {
+        "first": 1,
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+        "sixth": 6,
+        "seventh": 7,
+        "eighth": 8,
+        "ninth": 9,
+        "tenth": 10,
+    }
+    
+    padrao_original_the_best = (
+        r"\b(?:(?:his|her|their)\s+)?"
+        r"(first|second|third|fourth|fifth|sixth|seventh|"
+        r"eighth|ninth|tenth)\s+the\s+best\b"
+    )
+    
+    candidatos_ordinais = []
+
+    numeros = {
+        "um": 1,
+        "uma": 1,
+        "dois": 2,
+        "duas": 2,
+        "tres": 3,
+        "quatro": 4,
+        "cinco": 5,
+        "seis": 6,
+        "sete": 7,
+        "oito": 8,
+        "nove": 9,
+        "dez": 10,
+    }
+
+    padrao_numero = (
+        r"(?:"
+        r"(\d{1,2})"
+        r"|"
+        r"(um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez)"
+        r")"
+    )
+
+    padroes = [
+        # Ex.: conquistou oito Bolas de Ouro
+        rf"\b(?:conquistou|ganhou|venceu|recebeu)\s+{padrao_numero}\s+{premio_regex}\b",
+
+        # Ex.: recebeu a 8ª Bola de Ouro da carreira
+        rf"\b(?:conquistou|ganhou|venceu|recebeu)\s+a?\s*{padrao_numero}\s*(?:ª|a|º|o)?\s+{premio_regex}\b",
+
+        # Ex.: oito conquistas da Bola de Ouro
+        rf"\b{padrao_numero}\s+(?:conquistas?|premios?)\s+(?:da|de|do)\s+{premio_regex}\b",
+    
+        # Ex.: his first The Best FIFA Men's Player award
+        rf"\b(?:seu|his)\s+{padrao_numero}\s+{premio_regex}"
+        rf"(?:\s+(?:fifa\s+)?mens(?:'s)?\s+player)?"
+        rf"\s+award\b",
+    ]
+
+    candidatos = []
+
+    for resultado in resultados:
+        conteudo = (
+            resultado.get("conteudo_completo")
+            or resultado.get("conteudo")
+            or ""
+        )
+
+        if not conteudo:
+            continue
+
+        texto = normalizar_texto(conteudo)
+        
+        if eh_the_best:
+            ordinais_encontrados = re.findall(
+                padrao_original_the_best,
+                texto
+            )
+            
+            for ordinal in ordinais_encontrados:
+                url = resultado.get("url", "")
+                candidatos_ordinais.append({
+                    "quantidade": ordinais_the_best[ordinal],
+                    "url": url,
+                    "oficial": "fifa.com" in url.lower(),
+                })
+
+        for padrao in padroes:
+            for correspondencia in re.finditer(padrao, texto):
+                grupos = correspondencia.groups()
+
+                numero = next(
+                    (grupo for grupo in grupos if grupo),
+                    None
+                )
+
+                if not numero:
+                    continue
+
+                quantidade = (
+                    int(numero)
+                    if numero.isdigit()
+                    else numeros.get(numero)
+                )
+
+                if quantidade is None:
+                    continue
+
+                url = resultado.get("url", "")
+                dominio_oficial = "ballondor.com" in url.lower()
+
+                candidatos.append({
+                    "quantidade": quantidade,
+                    "url": url,
+                    "oficial": dominio_oficial,
+                })
+                
+    if eh_the_best and candidatos_ordinais:
+        print("ORDINAIS THE BEST ENCONTRADOS:", candidatos_ordinais)
+        
+        # O maior ordinal indica o total de conquistas.
+        quantidade_principal = max(
+            item["quantidade"]
+            for item in candidatos_ordinais
+        )
+        
+        fontes_ordenadas = sorted(
+            candidatos_ordinais,
+            key=lambda item: item["oficial"],
+            reverse=True
+        )
+        
+        fontes = list(dict.fromkeys(
+            item["url"]
+            for item in fontes_ordenadas
+            if item["url"]
+        ))
+        
+        if quantidade_principal == 1:
+            resposta = "Foi confirmada **1 conquista** do prêmio The Best da FIFA."
+        else:
+            resposta = (
+                f"Foram confirmadas **{quantidade_principal} conquistas** "
+                "do prêmio The Best da FIFA."
+            )
+        
+        if fontes:
+            resposta += "\n\nFonte(s) que confirmam a informação:\n"
+            resposta += "\n".join(f"- {url}" for url in fontes[:3])
+            
+        return resposta
+
+    if not candidatos:
+        return None
+    
+    print("CANDIDATOS ENCONTRADOS:", candidatos)
+
+    # Prioriza evidências do site oficial do prêmio.
+    candidatos.sort(
+        key=lambda item: item["oficial"],
+        reverse=True
+    )
+
+    quantidade_principal = candidatos[0]["quantidade"]
+
+    # Não responde automaticamente quando as fontes divergem.
+    quantidades = {
+        item["quantidade"]
+        for item in candidatos
+    }
+
+    if len(quantidades) > 1:
+        return None
+
+    fontes = list(dict.fromkeys(
+        item["url"]
+        for item in candidatos
+        if item["url"]
+    ))
+
+    if quantidade_principal == 1:
+        resposta = (
+            "Foi confirmada **1 conquista** desse prêmio."
+        )
+    else:
+        resposta = (
+            f"Foram confirmadas **{quantidade_principal} conquistas** "
+            f"desse prêmio."
+        )
+
+    if fontes:
+        resposta += "\n\nFonte(s) que confirmam a informação:\n"
+        resposta += "\n".join(f"- {url}" for url in fontes[:3])
+
+    return resposta
+
+
 async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
     eh_comparacao_gols = bool(
         intencao == "comparacao"
         and re.search(r"\bgols?\b", pergunta, re.IGNORECASE)
     )
 
+    texto_pergunta = normalizar_texto(pergunta)
+
+    eh_premio_especifico = any(
+        termo in texto_pergunta
+        for termo in [
+            "bola de ouro",
+            "the best",
+            "premio puskas",
+            "chuteira de ouro",
+            "golden boy",
+        ]
+    )
+    
+    eh_pergunta_quantidade_premio = any(
+        termo in texto_pergunta
+        for termo in [
+            "quantas vezes",
+            "quantos premios",
+            "quantas conquistas",
+            "quantas vezes ganhou",
+            "quantas vezes venceu",
+        ]
+    )
+
+    eh_lista_premios = any(
+        termo in texto_pergunta
+        for termo in [
+            "quais premios",
+            "quais premios individuais",
+            "todos os premios",
+            "lista de premios",
+            "premios conquistados",
+        ]
+    )
+
     resultados = await pesquisar_na_web(
-        pergunta, forcar_comparacao=eh_comparacao_gols
+        pergunta, 
+        forcar_comparacao=eh_comparacao_gols,
+        intencao=intencao,
+        equipe=(
+            identificar_time(pergunta)
+            if intencao == "quantidade_elenco"
+            else None
+        ),
     )
 
     with open("debug_ultima_pesquisa.json", "w", encoding="utf-8") as f:
@@ -4030,6 +4519,136 @@ async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
 
         return MSG_RECORTE_NAO_SUPORTADO
 
+    # Quantidade de jogadores por nacionalidade no elenco.
+    if intencao == "quantidade_elenco":
+        if not resultados:
+            return (
+                "Não consegui encontrar informações suficientes "
+                "sobre a nacionalidade dos jogadores desse elenco."
+            )
+
+        resultados_elenco = []
+
+        for resultado in resultados:
+            resultado_completo = resultado.copy()
+
+            conteudo_completo = (
+                resultado.get("conteudo_completo") or ""
+            ).strip()
+
+            conteudo_resumido = (
+                resultado.get("conteudo") or ""
+            ).strip()
+
+            resultado_completo["conteudo"] = (
+                conteudo_completo
+                if conteudo_completo
+                else conteudo_resumido
+            )
+
+            resultados_elenco.append(resultado_completo)
+
+        contexto_web = formatar_resultados_pesquisa(
+            resultados_elenco,
+            pergunta
+        )
+
+        resposta = await run_in_threadpool(
+            gerar_resposta_ollama,
+            pergunta,
+            contexto_web
+        )
+
+        urls = list(dict.fromkeys(
+            r["url"] for r in resultados if r.get("url")
+        ))[:5]
+
+        fontes = (
+            "\n\nFontes pesquisadas:\n"
+            + "\n".join(f"- {u}" for u in urls)
+            if urls else ""
+        )
+
+        return resposta + fontes
+
+    # Tratamento de prêmios individuais.
+    if intencao == "premios_individuais":
+        escopo_premios = identificar_escopo_estatistico(pergunta)
+
+        print("=== ESCOPO DA PERGUNTA DE PRÊMIOS ===")
+        print("Escopos encontrados:", escopo_premios["escopos"])
+        print("Tipo calculado:", escopo_premios["tipo"])
+        print("Equipe identificada:", escopo_premios["equipe"])
+        print("====================================")
+        if not resultados:
+            return (
+                "Não consegui encontrar informações suficientes "
+                "para confirmar os prêmios individuais desse jogador."
+            )
+        
+        resposta_deterministica = extrair_quantidade_premio(
+            pergunta,
+            resultados
+        )
+        
+        if resposta_deterministica:
+            return resposta_deterministica
+        
+        if eh_premio_especifico and eh_pergunta_quantidade_premio:
+            return (
+                "Não encontrei evidências suficientes nas fontes pesquisadas "
+                "para confirmar a quantidade de conquistas desse prêmio. "
+                "Prefiro não informar um número sem confirmação."
+            )
+
+        resultados_premios = []
+
+        for resultado in resultados:
+            resultado_completo = resultado.copy()
+
+            conteudo_completo = (
+                resultado.get("conteudo_completo") or ""
+            ).strip()
+
+            conteudo_resumido = (
+                resultado.get("conteudo") or ""
+            ).strip()
+
+            resultado_completo["conteudo"] = (
+                conteudo_completo
+                if conteudo_completo
+                else conteudo_resumido
+            )
+
+            resultados_premios.append(resultado_completo)
+
+        contexto_web = formatar_resultados_pesquisa(
+            resultados_premios,
+            pergunta
+        )
+
+        print("\n========== CONTEXTO DE PRÊMIOS ENVIADO AO OLLAMA ==========")
+        print(contexto_web)
+        print("========== FIM DO CONTEXTO ==========\n")
+
+        resposta = await run_in_threadpool(
+            gerar_resposta_ollama,
+            pergunta,
+            contexto_web
+        )
+
+        urls = list(dict.fromkeys(
+            r["url"] for r in resultados if r.get("url")
+        ))[:5]
+
+        fontes = (
+            "\n\nFontes pesquisadas:\n"
+            + "\n".join(f"- {u}" for u in urls)
+            if urls else ""
+        )
+
+        return resposta + fontes
+
     # Demais perguntas estatísticas (quantidade, divergência, etc.).
     if not resultados:
         return (
@@ -4048,6 +4667,176 @@ async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
         if urls else ""
     )
     return resposta + fontes
+
+
+async def responder_pergunta_geral_tavily(pergunta: str) -> str:
+    """
+    Pesquisa perguntas gerais de futebol no Tavily
+    e gera uma resposta baseada exclusivamente nas fontes.
+    """
+
+    resultados = await pesquisar_na_web(
+        pergunta,
+        max_resultados=5
+    )
+
+    resultados_validos = [
+        resultado
+        for resultado in resultados
+        if resultado.get("titulo")
+        and resultado.get("url")
+        and resultado.get("conteudo")
+    ]
+
+    # Interrompe a execução quando não existem fontes válidas.
+    if not resultados_validos:
+        return (
+            "Não encontrei fontes suficientes para responder "
+            "essa pergunta com segurança no momento. "
+            "Tente novamente mais tarde."
+        )
+
+    contexto = formatar_resultados_pesquisa(
+        resultados_validos,
+        pergunta
+    )
+
+    print("\n========== CONTEXTO ENVIADO AO OLLAMA ==========")
+    print(contexto)
+    print("========== FIM DO CONTEXTO ==========\n")
+
+    if not contexto:
+        return (
+            "Encontrei resultados, mas não consegui extrair "
+            "informações suficientes para responder com segurança."
+        )
+
+    resposta = await run_in_threadpool(
+        ollama.chat,
+        model="llama3.2:3b",
+        messages=[
+            {
+                "role": "system",
+                "content": """
+Você é o assistente virtual do Camisa10,
+especializado exclusivamente em futebol e futsal.
+
+Sua tarefa é responder perguntas utilizando
+as evidências fornecidas pelo Tavily.
+
+REGRAS OBRIGATÓRIAS:
+
+1. Utilize exclusivamente as informações presentes
+   nas evidências fornecidas.
+
+2. Leia todos os resultados antes de responder.
+
+3. Priorize fontes oficiais, como FIFA, UEFA,
+   CBF e federações esportivas.
+
+4. Quando as fontes apresentarem informações
+   suficientes, responda diretamente à pergunta.
+
+5. Não invente informações, datas, números,
+   estatísticas ou regras.
+
+6. Não utilize seu conhecimento interno para
+   completar informações ausentes nas fontes.
+
+7. Não exija que uma fonte tenha data de publicação
+   para considerar uma informação válida.
+   A ausência de data, por si só, não invalida
+   uma informação.
+
+8. Não confunda regras do futebol com regras do futsal.
+
+9. Não generalize regras que variam conforme
+   a modalidade ou competição.
+
+10. Se as fontes forem insuficientes, responda
+    claramente que não foi possível confirmar.
+
+11. Se houver divergência entre fontes confiáveis,
+    explique a divergência sem escolher uma resposta
+    arbitrariamente.
+
+12. Nunca apresente uma informação como confirmada
+    e depois diga que não foi possível confirmá-la.
+
+13. Não acrescente ressalvas contraditórias
+    depois de concluir a resposta.
+
+14. Responda em português brasileiro,
+    de maneira clara, objetiva e natural.
+
+15. Responda exatamente ao que foi perguntado.
+
+16. Não acrescente títulos, estatísticas ou informações de outras competições quando o usuário perguntar sobre uma competição específica.
+
+17. Diferencie Campeonato Brasileiro, Copa do Brasil, Copa dos Campeões e Supercopa do Brasil.
+
+18. Não confunda títulos de campeonatos nacionais com o total de títulos nacionais de um clube.
+
+19. Antes de informar uma quantidade, confira se a soma e a lista de conquistas correspondem ao mesmo critério.
+
+20. Se a pergunta for ambígua, explique brevemente a diferença entre as interpretações.
+
+21. Quando a pergunta solicitar apenas uma quantidade, responda diretamente e apresente os anos somente quando forem relevantes e estiverem confirmados pelas fontes.
+
+FORMATO DA RESPOSTA:
+
+- Se houver evidências suficientes, apresente
+  somente a resposta fundamentada.
+- Se não houver evidências suficientes, informe
+  somente que não foi possível confirmar.
+- Não crie uma seção de fontes.
+  Os links serão adicionados pelo sistema.
+
+IMPORTANTE:
+A resposta deve ter uma única conclusão coerente.
+Não misture informações confirmadas com suposições.
+"""
+            },
+            {
+                "role": "user",
+                "content": f"""
+PERGUNTA:
+{pergunta}
+
+EVIDÊNCIAS ENCONTRADAS PELO TAVILY:
+{contexto}
+
+Analise as evidências e responda seguindo
+rigorosamente as instruções do sistema.
+"""
+            }
+        ],
+        options={"temperature": 0.1}
+    )
+
+    texto_resposta = resposta["message"]["content"].strip()
+
+    if not texto_resposta:
+        texto_resposta = (
+            "Não foi possível gerar uma resposta "
+            "com segurança a partir das fontes encontradas."
+        )
+
+    fontes = list(dict.fromkeys(
+        resultado["url"]
+        for resultado in resultados_validos
+    ))[:5]
+
+    resposta_final = texto_resposta
+
+    if fontes:
+        resposta_final += (
+            "\n\nFontes pesquisadas:\n"
+            + "\n".join(f"- {url}" for url in fontes)
+        )
+
+    return resposta_final
+
     
 @app.post("/api/chat")
 async def conversar(pergunta: Pergunta):
@@ -4574,11 +5363,49 @@ async def conversar(pergunta: Pergunta):
 
     intencao_estatistica = identificar_intencao_estatistica(pergunta.pergunta)
 
+    # Identifica perguntas sobre títulos e conquistas de clubes
+    termos_titulos = [
+         "mundial",
+        "mundiais",
+        "intercontinental",
+        "copa intercontinental",
+        "libertadores",
+        "copa do brasil",
+        "copas do brasil",
+        "supercopa do brasil",
+        "copa dos campeões",
+        "copa dos campeoes",
+        "champions league",
+        "liga dos campeões",
+        "liga dos campeoes",
+        "títulos nacionais",
+        "titulos nacionais",
+        "títulos brasileiros",
+        "titulos brasileiros",
+    ]
+
+    pergunta_sobre_titulos = any(
+        termo in pergunta.pergunta.lower()
+        for termo in termos_titulos
+    )
+
+    print("PERGUNTA:", pergunta.pergunta)
+    print("É PERGUNTA SOBRE TÍTULOS:", pergunta_sobre_titulos)
+
+    if pergunta_sobre_titulos:
+        resposta = await responder_pergunta_geral_tavily(
+            pergunta.pergunta
+        )
+
+        return {
+            "response": resposta
+        }
+
     print("PERGUNTA:", pergunta.pergunta)
     print("INTENÇÃO:", intencao_estatistica)
 
     eh_pergunta_estatistica = intencao_estatistica in {
-        "quantidade", "comparacao", "divergencia",
+        "quantidade", "comparacao", "divergencia", "quantidade_elenco", "premios_individuais",
     }
 
     if conhecimento is not None and not eh_pergunta_estatistica:
@@ -4598,9 +5425,13 @@ async def conversar(pergunta: Pergunta):
     
     time = identificar_time(pergunta.pergunta)
 
+    print("TIME IDENTIFICADO:", time)
+
     if time is None:
-        resposta = gerar_resposta_ollama(pergunta.pergunta, 
-                                         "Nenhum dado específico foi encontrado para essa pergunta.")
+        resposta = await responder_pergunta_geral_tavily(
+            pergunta.pergunta
+        )
+
         return {
             "response": resposta
         }

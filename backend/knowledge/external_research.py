@@ -5,7 +5,6 @@ import re
 import unicodedata
 from dotenv import load_dotenv
 from datetime import date, datetime, timedelta
-
 load_dotenv()
 
 TAVILY_URL = "https://api.tavily.com/search"
@@ -142,6 +141,49 @@ def normalizar_escopo(texto: str) -> str:
         if unicodedata.category(caractere) != "Mn"
     )
     return re.sub(r"\s+", " ", texto)
+
+def extrair_jogador_pergunta(pergunta: str) -> str:
+    """
+    Extrai o nome do jogador de perguntas sobre prêmios individuais.
+    Remove expressões comuns do início e do final da pergunta.
+    """
+
+    texto = pergunta.strip().rstrip("?!.")
+
+    padroes_inicio = [
+        r"^quantas?\s+vezes\s+",
+        r"^quantos?\s+",
+        r"^quem\s+",
+        r"^quais\s+",
+        r"^liste\s+",
+        r"^me\s+diga\s+",
+    ]
+
+    for padrao in padroes_inicio:
+        texto = re.sub(
+            padrao,
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+
+    padroes_fim = [
+        r"\s+ganhou\s+.*$",
+        r"\s+venceu\s+.*$",
+        r"\s+conquistou\s+.*$",
+        r"\s+recebeu\s+.*$",
+        r"\s+tem\s+.*$",
+    ]
+
+    for padrao in padroes_fim:
+        texto = re.sub(
+            padrao,
+            "",
+            texto,
+            flags=re.IGNORECASE,
+        )
+
+    return texto.strip()
 
 COMPETICOES = {
     "libertadores": {"consulta": "Copa Libertadores", "termos": ["libertadores"]},
@@ -438,6 +480,14 @@ def identificar_escopo_estatistico(pergunta: str) -> dict:
         escopos.append("temporada")
 
     equipe = None
+    
+    entidades_nao_equipe = {
+        "fifa",
+        "uefa",
+        "conmebol",
+        "fifpro",
+        "cbf",
+    }
 
     padrao_equipe = (
         r"\b(?:pelo|pela|pelos|pelas|do|da|dos|das)"
@@ -455,8 +505,9 @@ def identificar_escopo_estatistico(pergunta: str) -> dict:
         equipe = re.sub(r"\s+", " ", match_equipe.group(1).strip())
         equipe_norm = normalizar_escopo(equipe)
 
-        if equipe_norm.startswith("selecao") or re.search(
-            r"\b(?:ou|vs|versus)\b", equipe_norm
+        if (equipe_norm.startswith("selecao")
+            or equipe_norm in entidades_nao_equipe
+            or re.search(r"\b(?:ou|vs|versus)\b", equipe_norm)
         ):
             equipe = None
 
@@ -490,7 +541,7 @@ def identificar_escopo_estatistico(pergunta: str) -> dict:
 
     return resultado 
 
-async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_comparacao: bool = False,):
+async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_comparacao: bool = False, intencao: str | None = None, equipe: str | None = None):
     api_key = os.getenv("TAVILY_API_KEY")
 
     if not api_key:
@@ -498,6 +549,12 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
         return []
 
     eh_comparacao = forcar_comparacao or pergunta_sobre_comparacao_estatistica(pergunta)
+    eh_quantidade_elenco = intencao == "quantidade_elenco"
+    eh_premios_individuais = intencao == "premios_individuais"
+
+    print("INTENÇÃO RECEBIDA PELO TAVILY:", intencao)
+    print("MODO DE PRÊMIOS ATIVO:", eh_premios_individuais)
+    
     hoje = date.today()
 
     if eh_comparacao:
@@ -578,16 +635,125 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                 "query": consulta_conjunta,
             })
 
+    elif eh_premios_individuais:
+        print("=== ENTROU NO BLOCO DE PRÊMIOS INDIVIDUAIS ===")
+        print("=== MODO DE PESQUISA: PRÊMIOS INDIVIDUAIS ===")
+        print("Intenção recebida:", intencao)
+        print("Pergunta:", pergunta)
+        texto = normalizar_escopo(pergunta)
+
+        termos_premios = {
+            "bola de ouro": "Bola de Ouro France Football",
+            "the best": "The Best FIFA Men's Player",
+            "premio puskas": "Prêmio FIFA Ferenc Puskás",
+            "chuteira de ouro": "Chuteira de Ouro",
+            "golden boy": "Golden Boy",
+        }
+
+        premio_especifico = next(
+            (
+                premio
+                for termo, premio in termos_premios.items()
+                if termo in texto
+            ),
+            None
+        )
+
+        if premio_especifico and "the best" in texto:
+            consultas = [
+                {
+                    "jogador": "",
+                    "query": " ".join((
+                        f'"{premio_especifico}" {pergunta} '
+                        "historico de vencedores FIFA oficial"
+                    ).split()),
+                },
+                {
+                    "jogador": "",
+                    "query": " ".join((
+                        f'{pergunta} "The Best FIFA" '
+                        "anos das conquistas quantidade de vitorias"
+                    ).split()),
+                },
+                {
+                    "jogador": "",
+                    "query": " ".join((
+                        f'"The Best FIFA Men\'s Player" {pergunta} '
+                        "past winners official FIFA"
+                    ).split()),
+                },
+            ]
+            
+        elif premio_especifico:
+            consulta = (
+                f'"{premio_especifico}" '
+                f'{pergunta} jogador vencedor anos conquistas '
+                'histórico oficial'
+            )
+            
+            consultas = [
+                {
+                    "jogador": "",
+                    "query": " ".join(consulta.split()),
+                }
+            ]
+        else:
+            consulta = (
+                f'{pergunta} '
+                'prêmios individuais conquistados vencedores anos '
+                'não incluir títulos coletivos nem indicações'
+            )
+            
+            consultas = [
+                {
+                    "jogador": "",
+                    "query": " ".join(consulta.split()),
+                }
+            ]
+
+    elif eh_quantidade_elenco:
+       texto = pergunta.lower()
+
+       nacionalidades = {
+            "brasileiros": "brasileiros",
+            "brasileiras": "brasileiras",
+            "estrangeiros": "estrangeiros",
+            "estrangeiras": "estrangeiras",
+            "argentinos": "argentinos",
+            "portugueses": "portugueses",
+            "uruguaios": "uruguaios",
+            "colombianos": "colombianos",
+       }
+
+       nacionalidade = next(
+           (
+               valor for termo, valor in nacionalidades.items()
+               if termo in texto
+           ),
+           ""
+       )
+
+       if not equipe:
+           print("Não foi possível identificar a equipe para a pesquisa de elenco.")
+           return []
+
+       consultas = [
+           {
+               "jogador": "",
+               "query": (
+                   f'"{equipe}" elenco profissional atual '
+                   f'temporada {hoje.year} '
+                   f'jogadores {nacionalidade} '
+                   'nacionalidade lista completa do plantel'
+               ),
+           }
+       ]
+
     else:
         consultas = [
             {
                 "jogador": "",
-                "query": (
-                    f"{pergunta} "
-                    "estatísticas oficiais de futebol. "
-                    "Priorize fontes confiáveis e identifique "
-                    "a estatística e o critério de contagem."
-                ),
+                "query": pergunta.strip(),
             }
         ]
      
@@ -610,7 +776,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                     if eh_comparacao
                     else max_resultados,
                     "include_answer": False,
-                    "include_raw_content": "markdown" if eh_comparacao else False,
+                    "include_raw_content": "markdown" if eh_comparacao or eh_quantidade_elenco or eh_premios_individuais else False,
                     "exclude_domains": [
                         "instagram.com", "facebook.com", "threads.com",
                         "tiktok.com", "x.com", "twitter.com",
@@ -935,6 +1101,25 @@ def formatar_resultados_pesquisa(
 
     partes = []
 
+    texto_pergunta = normalizar_escopo(pergunta)
+
+    eh_premios_individuais = any(
+        termo in texto_pergunta
+        for termo in [
+            "bola de ouro",
+            "bolas de ouro",
+            "the best",
+            "fifa the best",
+            "chuteira de ouro",
+            "golden boy",
+            "puskas",
+            "premio puskas",
+            "prêmio puskas",
+            "premios individuais",
+            "prêmios individuais",
+        ]
+    )
+
     for i, resultado in enumerate(resultados, start=1):
         titulo = resultado.get("titulo", "Sem título")
         url = resultado.get("url", "")
@@ -949,13 +1134,37 @@ def formatar_resultados_pesquisa(
         if not conteudo:
             continue
 
+        if eh_premios_individuais:
+            termos_relevantes = [
+                "bola de ouro",
+                "ballon d'or",
+                "conquistou oito",
+                "recebeu a 8ª",
+                "oito conquistas",
+                "8 conquistas",
+            ]
+
+        linhas_relevantes = [
+            linha.strip()
+            for linha in conteudo.splitlines()
+            if any(
+                termo in normalizar_escopo(linha)
+                for termo in termos_relevantes
+            )
+        ]
+
+        if not linhas_relevantes:
+            continue
+
+        conteudo = "\n".join(linhas_relevantes[:15])
+
         partes.append(
             f"FONTE {i}\n"
             f"Jogador pesquisado: {jogador or 'Não especificado'}\n"
             f"Título: {titulo}\n"
             f"URL: {url or 'Não disponível'}\n"
             f"Data de publicação: {data_publicacao}\n"
-            f"Trecho publicado:\n{conteudo[:2000]}"
+            f"Trecho publicado:\n{conteudo[:12000]}"
         )
 
     if not partes:
@@ -1015,6 +1224,29 @@ REGRAS OBRIGATÓRIAS:
   diga que não foi possível confirmar a comparação.
 - Cite as fontes utilizadas com seus links.
 - Responda em português brasileiro, com clareza e objetividade.
+"""
+    elif eh_premios_individuais:
+        instrucoes = """
+A pergunta trata de prêmios individuais de um jogador.
+
+REGRAS OBRIGATÓRIAS:
+- Responda exatamente ao prêmio ou à lista solicitada.
+- Se o usuário perguntar a quantidade de um prêmio específico,
+  informe somente a quantidade desse prêmio.
+- Não transforme uma pergunta de contagem em uma pergunta
+  sobre quem venceu uma edição específica.
+- Diferencie prêmios com nomes semelhantes.
+- Não confunda Bola de Ouro com The Best FIFA Men's Player.
+- Não confunda Bola de Ouro com Chuteira de Ouro.
+- Conte somente conquistas efetivamente recebidas.
+- Não conte indicações ou colocações como vitórias.
+- Não inclua títulos coletivos.
+- Utilize os anos das conquistas quando estiverem disponíveis.
+- Priorize fontes oficiais e evidências explícitas.
+- Não invente quantidades ou anos.
+- Se as fontes não permitirem confirmar a resposta, informe isso.
+- Cite as fontes utilizadas com seus links.
+- Responda em português brasileiro, de forma objetiva.
 """
     else:
         instrucoes = """
