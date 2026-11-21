@@ -513,6 +513,7 @@ def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
             "id": partida["id"],
             "data": partida["utcDate"],
             "status": partida["status"],
+            "rodada": partida.get("matchday"),
             "competicao": partida["competition"]["name"],
             "codigo_competicao": partida["competition"]["code"],
             "temporada": partida.get("season", {}).get("startDate"),
@@ -527,6 +528,143 @@ def buscar_jogos_competicao(codigo_competicao, status="FINISHED"):
     _CACHE_JOGOS[chave_cache] = (time.time(), resultado)
 
     return resultado
+
+
+def buscar_destaques_ultima_rodada():
+    jogos = buscar_jogos_competicao("BSA", status=None)
+
+    if isinstance(jogos, dict) and "erro" in jogos:
+        return jogos
+
+    partidas_por_rodada = {}
+
+    for jogo in jogos:
+        rodada = jogo.get("rodada")
+
+        if rodada is not None:
+            partidas_por_rodada.setdefault(rodada, []).append(jogo)
+
+    rodadas_completas = []
+
+    for rodada, partidas in partidas_por_rodada.items():
+        if partidas and all(
+            jogo["status"] == "FINISHED"
+            for jogo in partidas
+        ):
+            rodadas_completas.append(rodada)
+
+    if not rodadas_completas:
+        return {"erro": "Nenhuma rodada completa foi encontrada."}
+
+    ultima_rodada = max(rodadas_completas)
+
+    partidas = partidas_por_rodada[ultima_rodada]
+
+    partidas_com_gols = [
+        jogo for jogo in partidas
+        if jogo["gols_mandante"] is not None
+        and jogo["gols_visitante"] is not None
+    ]
+
+    if not partidas_com_gols:
+        return {"erro": "Não foi possível obter os placares da rodada."}
+
+    gols_por_time = {}
+
+    for jogo in partidas_com_gols:
+        mandante = jogo["mandante"]
+        visitante = jogo["visitante"]
+
+        gols_mandante = jogo["gols_mandante"]
+        gols_visitante = jogo["gols_visitante"]
+
+        gols_por_time.setdefault(mandante, {
+            "marcados": 0,
+            "sofridos": 0
+        })
+
+        gols_por_time.setdefault(visitante, {
+            "marcados": 0,
+            "sofridos": 0
+        })
+
+        gols_por_time[mandante]["marcados"] += gols_mandante
+        gols_por_time[mandante]["sofridos"] += gols_visitante
+
+        gols_por_time[visitante]["marcados"] += gols_visitante
+        gols_por_time[visitante]["sofridos"] += gols_mandante
+        
+    maior_numero_gols = max(
+        time["marcados"]
+        for time in gols_por_time.values()
+    )
+
+    menor_numero_gols_sofridos = min(
+        time["sofridos"]
+        for time in gols_por_time.values()
+    )
+
+    melhores_ataques = [
+        {
+            "time": nome,
+            "gols": dados["marcados"]
+        }
+        for nome, dados in gols_por_time.items()
+        if dados["marcados"] == maior_numero_gols
+    ]
+
+    melhores_defesas = [
+        {
+            "time": nome,
+            "gols_sofridos": dados["sofridos"]
+        }
+        for nome, dados in gols_por_time.items()
+        if dados["sofridos"] == menor_numero_gols_sofridos
+    ]
+
+    menor_diferenca_gols = min(
+        abs(jogo["gols_mandante"] - jogo["gols_visitante"])
+        for jogo in partidas_com_gols
+    )
+
+    partidas_equilibradas = [
+        jogo
+        for jogo in partidas_com_gols
+        if abs(
+            jogo["gols_mandante"] - jogo["gols_visitante"]
+        ) == menor_diferenca_gols
+    ]
+    
+    total_gols = sum(
+        jogo["gols_mandante"] + jogo["gols_visitante"]
+        for jogo in partidas_com_gols
+    )
+
+    jogo_mais_gols = max(
+        partidas_com_gols,
+        key=lambda jogo: jogo["gols_mandante"] + jogo["gols_visitante"]
+    )
+
+    maior_goleada = max(
+        partidas_com_gols,
+        key=lambda jogo: abs(
+            jogo["gols_mandante"] - jogo["gols_visitante"]
+        )
+    )
+
+    return {
+        "competicao": "Brasileirão Série A",
+        "rodada": ultima_rodada,
+        "total_partidas": len(partidas),
+        "total_gols": total_gols,
+        "media_gols": round(total_gols / len(partidas_com_gols), 2),
+        "jogo_mais_gols": jogo_mais_gols,
+        "maior_goleada": maior_goleada,
+        "partidas": partidas_com_gols,
+        "melhores_ataques": melhores_ataques,
+        "melhores_defesas": melhores_defesas,
+        "partidas_equilibradas": partidas_equilibradas,
+    }
 
 def buscar_classificacao_competicao(codigo_competicao):
     url = f"https://api.football-data.org/v4/competitions/{codigo_competicao}/standings"

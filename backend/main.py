@@ -2,7 +2,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes)
+from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta, date
@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
 from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica, COMPETICOES, identificar_competicao_pergunta)
 from backend.services.api_football import buscar_jogos_por_data
+from backend.knowledge.curiosidades import obter_curiosidade_aleatoria
 from fastapi.concurrency import run_in_threadpool
 from backend.routes.auth import router as auth_router
 from backend.routes.home import router as home_router
@@ -1939,8 +1940,12 @@ RECORTE OBRIGATÓRIO: TEMPORADA.
 
     tipo_escopo = escopo_estatistico.get("tipo", "")
     instrucoes_escopo = instrucoes_escopo.get(tipo_escopo, "")
-    if intencao_estatistica == "premios_individuais":
+    if intencao_estatistica in (
+        "premios_individuais",
+        "titulos_clubes",
+    ):
         instrucoes_escopo = ""
+        tipo_escopo = ""
 
     if pergunta_estatistica:
         prompt_sistema = """
@@ -2105,8 +2110,56 @@ FORMATO:
 - Seja objetivo e evite informações que não foram solicitadas.
 - Não transforme uma pergunta sobre um prêmio específico
   em uma biografia completa do jogador.
-"""
+""",
+        "titulos_clubes": """
+Você é um especialista em história e estatísticas do futebol.
+
+Responda perguntas sobre títulos coletivos conquistados por clubes.
+
+REGRAS:
+- Considere somente títulos oficiais.
+- Não contabilize amistosos, torneios amistosos ou partidas comemorativas.
+- Não confunda títulos do clube com prêmios individuais de jogadores.
+- Não misture títulos conquistados pela seleção nacional com títulos do clube.
+- Não conte duas vezes o mesmo título.
+- Diferencie competições nacionais, continentais e mundiais.
+- Utilize somente informações sustentadas pelas fontes fornecidas.
+- Quando não houver evidências suficientes, informe que não foi possível confirmar a quantidade.
+- Não invente números nem complete informações por suposição.
+- Apresente as fontes utilizadas.
+""",
     }
+
+    instrucoes_usuario = f"""
+Pergunta do usuário:
+{pergunta}
+
+Escopo estatístico identificado pelo sistema:
+{tipo_escopo}
+
+Instruções obrigatórias para esse escopo:
+{instrucoes_escopo}
+
+Conceito identificado pelo sistema:
+{conceito}
+
+Dados e contexto disponíveis:
+{contexto}
+
+Procedimento obrigatório:
+1. Separe mentalmente as evidências por jogador e recorte estatístico.
+2. Desconsidere como resposta direta números de recortes diferentes do solicitado.
+3. Antes de concluir, verifique se há evidências suficientes para responder.
+4. Se houver apenas dados parciais, apresente-os separadamente.
+5. Não transforme dados parciais em totais históricos.
+
+Instruções finais:
+- Responda à pergunta original.
+- Use somente números sustentados pelas fontes fornecidas.
+- Não invente informações ausentes.
+- Se não for possível responder com segurança, explique por quê.
+- Escreva em português brasileiro.
+"""
 
     if intencao_estatistica:
         prompt_sistema += (
@@ -2114,10 +2167,10 @@ FORMATO:
             f"{intencao_estatistica.upper()}:\n"
             + instrucoes_por_intencao[intencao_estatistica]
         )
-
-        if intencao_estatistica == "premios_individuais":
-            instrucoes_usuario = f"""
-PERGUNTA ORIGINAL:
+        
+    if intencao_estatistica == "premios_individuais":
+        instrucoes_usuario = f"""
+        PERGUNTA ORIGINAL:
 {pergunta}
 
 CONTEXTO DE PESQUISA:
@@ -2139,43 +2192,42 @@ REGRAS:
 - Responda em português brasileiro, de forma objetiva.
 - Inclua os links das fontes que sustentam a resposta.
 """
-    else:
+    elif intencao_estatistica == "titulos_clubes":
         instrucoes_usuario = f"""
-Pergunta do usuário:
+        PERGUNTA ORIGINAL:
 {pergunta}
 
-Escopo estatístico identificado pelo sistema:
-{tipo_escopo}
-
-Instruções obrigatórias para esse escopo:
-{instrucoes_escopo}
-
-Conceito identificado pelo sistema:
-{conceito}
-
-Dados e contexto disponíveis:
+CONTEXTO DE PESQUISA:
 {contexto}
 
-Procedimento obrigatório:
-1. Separe mentalmente as evidências por jogador e recorte estatístico.
-2. Desconsidere como resposta direta números de recortes
-   diferentes do solicitado.
-3. Antes de concluir, verifique se há um total comparável
-   para cada jogador.
-4. Se houver apenas dados parciais, apresente-os separadamente
-   e não os transforme em totais históricos.
-5. Não use a ausência de dados em uma categoria para descartar
-   estatísticas válidas de outras categorias.
+TAREFA:
+Responda à pergunta sobre os títulos oficiais do clube mencionado.
 
-Instruções finais:
-- Responda à pergunta original, não apenas ao número mais destacado.
-- Em comparações, avalie separadamente cada jogador.
-- Use somente números sustentados pelas fontes fornecidas.
-- Não invente informações ausentes.
-- Se não for possível comparar os dois jogadores, explique por quê.
-- Escreva a resposta completa em português brasileiro.
+REGRAS OBRIGATÓRIAS:
+
+1. Priorize a enciclopédia e os registros oficiais do próprio clube.
+2. Diferencie títulos oficiais principais de títulos oficiais menores.
+3. Não inclua amistosos, torneios amistosos ou jogos comemorativos.
+4. Não conte duas vezes a mesma conquista.
+5. Não confunda competições diferentes.
+6. Não some números de fontes que utilizam critérios diferentes.
+7. Se uma fonte informar diretamente a quantidade de títulos,
+   utilize o número somente quando o critério estiver explícito.
+8. Se houver divergência, apresente os números e explique
+   a diferença de critérios.
+9. Não invente listas de conquistas ou anos.
+10. Não tente reconstruir uma quantidade somando listas incompletas.
+11. Se não houver evidência suficiente, informe que não foi
+    possível confirmar a quantidade.
+
+FORMATO:
+- Responda diretamente à pergunta.
+- Informe o critério utilizado na contagem.
+- Diferencie títulos principais de títulos oficiais menores.
+- Cite os links das fontes que sustentam a resposta.
+- Escreva em português brasileiro.
 """
-
+        
     resposta = ollama.chat(
         model="llama3.2:3b",
         messages=[
@@ -2848,6 +2900,25 @@ def identificar_intencao_estatistica(pergunta: str) -> str | None:
 
     if any(termo in texto for termo in termos_premios_individuais):
         return "premios_individuais"
+    
+    termos_titulos_clubes = [
+        "titulos do clube",
+        "titulos do time",
+        "titulos do time",
+        "titulos conquistados",
+        "titulos oficiais",
+        "quantos titulos",
+        "quantos campeonatos",
+        "trofeus do clube",
+        "trofeus conquistados",
+        "historia de titulos",
+        "lista de titulos",
+        "titulos do ",
+    ]
+    
+    if any(termo in texto for termo in termos_titulos_clubes):
+        if identificar_time(pergunta):
+            return "titulos_clubes"
 
     return None
 
@@ -4238,6 +4309,8 @@ def extrair_quantidade_premio(pergunta: str, resultados: list) -> str | None:
     )
     
     candidatos_ordinais = []
+    anos_the_best = set()
+    fontes_the_best = []
 
     numeros = {
         "um": 1,
@@ -4292,18 +4365,133 @@ def extrair_quantidade_premio(pergunta: str, resultados: list) -> str | None:
 
         texto = normalizar_texto(conteudo)
         
+        if eh_the_best and "fifa.com" in resultado.get("url", "").lower():
+            print("\n=== CONTEÚDO FIFA RECEBIDO PELO EXTRATOR ===")
+            print("URL:", resultado.get("url"))
+            print("TAMANHO DO CONTEÚDO:", len(texto))
+            print(texto[:6000])
+            print("=" * 60)
+        
         if eh_the_best:
+            url = resultado.get("url", "").lower()
+            
+            if "fifa.com" in url:
+                termos_ignorados = {
+                    "quantas", "quantos", "vez", "vezes",
+                    "ganhou", "ganhar", "conquistou",
+                    "venceu", "recebeu", "premio",
+                    "do", "da", "de", "o", "a",
+                    "the", "best", "fifa", "mens",
+                    "player", "award",
+                }
+                
+                pergunta_sem_premio = re.sub(
+                    r"\bthe\s+best(?:\s+fifa)?\b",
+                    "",
+                    texto_pergunta
+                )
+                
+                palavras_jogador = []
+                
+                for palavra in pergunta_sem_premio.split():
+                    palavra_limpa = re.sub(r"[^\w]", "", palavra)
+                    
+                    if palavra_limpa and palavra_limpa not in termos_ignorados:
+                        palavras_jogador.append(palavra_limpa)
+                
+                nome_jogador = " ".join(palavras_jogador)
+                
+                nome_jogador = re.sub(
+                    r"\s+",
+                    " ",
+                    nome_jogador
+                ).strip()
+                
+                print("NOME EXTRAÍDO:", repr(nome_jogador))
+                print("NOME EXISTE NO TEXTO:", nome_jogador in texto)
+                print(
+                    "TRECHO THE BEST:",
+                    repr(texto[texto.find("the best fifa"):texto.find("the best fifa") + 150])
+                )
+                
+                if nome_jogador and nome_jogador in texto:
+                    padrao_lista_the_best = [
+                        (
+                            r"the best fifa\s*:\s*melhor jogador"
+                            r"\s*-\s*(?:tres|3)\s+vezes vencedor em\s+"
+                            r"([0-9,\se]+)"
+                        ),
+                        (
+                            r"the best fifa\s+para o jogador do ano em\s+"
+                            r"((?:19|20)\d{2}(?:\s*(?:,|e)\s*(?:19|20)\d{2})*)"
+                        ),
+                    ]
+                    
+                    for padrao in padrao_lista_the_best:
+                        correspondencia = re.search(padrao, texto)
+                        
+                        if correspondencia:
+                            anos_encontrados = re.findall(
+                                r"\b20\d{2}\b",
+                                correspondencia.group(1)
+                            )
+                            
+                            anos_the_best.update(
+                                int(ano) for ano in anos_encontrados
+                            )
+                            
+                            if resultado.get("url") not in fontes_the_best:
+                                fontes_the_best.append(resultado.get("url"))
+                                
+                            print("ANOS ENCONTRADOS:", anos_encontrados)
+
+                            break
+                    
+                    if not anos_the_best and "all-award-winners-history" in url:
+                        fim_secao_masculina = texto.find("aitana bonmati")
+                        
+                        if fim_secao_masculina != -1:
+                            secao_masculina = texto[:fim_secao_masculina]
+                            
+                            padrao_vencedor = (
+                                r"\b(20\d{2})\s*[-–]\s*"
+                                r"\*\*[^*]*\b"
+                                + re.escape(nome_jogador)
+                                + r"\b[^*]*\*\*"
+                            )
+                            
+                            anos_encontrados = re.findall(
+                                padrao_vencedor,
+                                secao_masculina
+                            )
+                            
+                            if anos_encontrados:
+                                anos_validos = [
+                                    int(ano)
+                                    for ano in anos_encontrados
+                                    if int(ano) >= 2016
+                                ]
+                                
+                                anos_the_best.update(anos_validos)
+                                
+                                if resultado.get("url") not in fontes_the_best:
+                                    fontes_the_best.append(resultado.get("url"))
+                                
+                                print(
+                                    "ANOS ENCONTRADOS NA LISTA HISTÓRICA:",
+                                    anos_validos
+                                )
+                        
             ordinais_encontrados = re.findall(
                 padrao_original_the_best,
                 texto
             )
             
             for ordinal in ordinais_encontrados:
-                url = resultado.get("url", "")
                 candidatos_ordinais.append({
                     "quantidade": ordinais_the_best[ordinal],
-                    "url": url,
-                    "oficial": "fifa.com" in url.lower(),
+                    "url": resultado.get("url", ""),
+                    "oficial": "fifa.com" in resultado.get("url", "").lower(),
                 })
 
         for padrao in padroes:
@@ -4336,39 +4524,41 @@ def extrair_quantidade_premio(pergunta: str, resultados: list) -> str | None:
                     "oficial": dominio_oficial,
                 })
                 
-    if eh_the_best and candidatos_ordinais:
-        print("ORDINAIS THE BEST ENCONTRADOS:", candidatos_ordinais)
+    if eh_the_best:
+        if not anos_the_best:
+            print("Nenhuma lista oficial de conquistas foi encontrada.")
+            return None
         
-        # O maior ordinal indica o total de conquistas.
-        quantidade_principal = max(
-            item["quantidade"]
-            for item in candidatos_ordinais
+        quantidade_principal = len(anos_the_best)
+        
+        print(
+            "ANOS DE CONQUISTAS THE BEST:",
+            sorted(anos_the_best)
         )
-        
-        fontes_ordenadas = sorted(
-            candidatos_ordinais,
-            key=lambda item: item["oficial"],
-            reverse=True
-        )
-        
-        fontes = list(dict.fromkeys(
-            item["url"]
-            for item in fontes_ordenadas
-            if item["url"]
-        ))
         
         if quantidade_principal == 1:
-            resposta = "Foi confirmada **1 conquista** do prêmio The Best da FIFA."
-        else:
+            resposta = (
+                "Foi confirmada **1 conquista** do prêmio "
+                "The Best da FIFA."
+            )
+        else: 
             resposta = (
                 f"Foram confirmadas **{quantidade_principal} conquistas** "
                 "do prêmio The Best da FIFA."
             )
         
-        if fontes:
+        resposta += (
+            "\n\nAnos das conquistas: "
+            + ", ".join(str(ano) for ano in sorted(anos_the_best))
+            + "."
+        )
+        
+        if fontes_the_best:
             resposta += "\n\nFonte(s) que confirmam a informação:\n"
-            resposta += "\n".join(f"- {url}" for url in fontes[:3])
-            
+            resposta += "\n".join(
+                f"- {url}" for url in fontes_the_best[:3]
+            )
+        
         return resposta
 
     if not candidatos:
@@ -4463,7 +4653,7 @@ async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
         intencao=intencao,
         equipe=(
             identificar_time(pergunta)
-            if intencao == "quantidade_elenco"
+            if intencao in ("quantidade_elenco", "titulos_clubes")
             else None
         ),
     )
@@ -4640,6 +4830,88 @@ async def responder_pergunta_estatistica(pergunta: str, intencao: str) -> str:
         urls = list(dict.fromkeys(
             r["url"] for r in resultados if r.get("url")
         ))[:5]
+
+        fontes = (
+            "\n\nFontes pesquisadas:\n"
+            + "\n".join(f"- {u}" for u in urls)
+            if urls else ""
+        )
+
+        return resposta + fontes
+    
+    # Tratamento específico de títulos coletivos de clubes.
+    if intencao == "titulos_clubes":
+        if not resultados:
+            return (
+                "Não consegui encontrar fontes suficientes "
+                "para confirmar os títulos oficiais desse clube."
+            )
+            
+        resultados_titulos = []
+        
+        resultados_filtrados = []
+        
+        for resultado in resultados:
+            url = (resultado.get("url") or "").lower().rstrip("/")
+            
+            if "enciclopedia-todos-os-titulos-da-base" in url:
+                continue
+            
+            if url.endswith("/enciclopedia-todos-os-titulos-2"):
+                continue
+            
+            resultados_filtrados.append(resultado)
+        
+        for resultado in resultados_filtrados[:5]:
+            resultado_completo = resultado.copy()
+            
+            conteudo_completo = (
+                resultado.get("conteudo_completo") or ""
+            ).strip()
+            
+            conteudo_resumido = (
+                resultado.get("conteudo") or ""
+            ).strip()
+            
+            resultado_completo["conteudo"] = (
+                conteudo_completo[:7000]
+                if conteudo_completo
+                else conteudo_resumido[:7000]
+            )
+            
+            if resultado_completo["conteudo"]:
+                resultados_titulos.append(resultado_completo)
+                
+        if not resultados_titulos:
+            return (
+                "As pesquisas não retornaram conteúdo suficiente "
+                "para verificar os títulos oficiais do clube."
+            )
+            
+        contexto_web = "\n\n---\n\n".join(
+            (
+                f"FONTE: {r.get('titulo', 'Sem título')}\n"
+                f"URL: {r.get('url', 'Não disponível')}\n"
+                f"CONTEÚDO:\n{r['conteudo']}"
+            )
+            for r in resultados_titulos
+        )
+        
+        print("\n========== CONTEXTO DE TÍTULOS ENVIADO AO OLLAMA ==========")
+        print(contexto_web)
+        print("========== FIM DO CONTEXTO ==========\n")
+        
+        resposta = await run_in_threadpool(
+            gerar_resposta_ollama,
+            pergunta,
+            contexto_web
+        )
+
+        urls = list(dict.fromkeys(
+            r["url"]
+            for r in resultados_titulos
+            if r.get("url")
+        ))[:8]
 
         fontes = (
             "\n\nFontes pesquisadas:\n"
@@ -4901,6 +5173,159 @@ async def conversar(pergunta: Pergunta):
     if not pergunta_e_de_futebol(pergunta.pergunta):
         return {
             "response": "Posso ajudar apenas com assuntos relacionados ao futebol."
+        }
+        
+    pergunta_normalizada = normalizar_texto(pergunta.pergunta)
+    
+    termos_curiosidade = [
+        "curiosidade",
+        "curiosidades",
+        "fato curioso",
+        "fatos curiosos",
+        "voce sabia",
+        "me conte algo curioso",
+        "me fala algo curioso"
+    ]
+    
+    if any(
+        termo in pergunta_normalizada
+        for termo in termos_curiosidade
+    ):
+        return {
+            "response": obter_curiosidade_aleatoria()
+        }
+    
+    termos_destaques = [
+        "quem foram os destaques",
+        "destaques da ultima rodada",
+        "destaques da última rodada",
+        "destaques da rodada",
+        "destaque da rodada",
+        "como foi a ultima rodada",
+        "ultima rodada do brasileirao",
+        "rodada passada",
+        "jogos com mais gols da rodada",
+        "jogos com mais gols"
+    ]
+    
+    if any(
+        termo in pergunta_normalizada
+        for termo in termos_destaques
+    ):
+        destaques = buscar_destaques_ultima_rodada()
+        
+        if isinstance(destaques, dict) and "erro" in destaques:
+            return {
+                "response": (
+                    "Não consegui buscar os destaques da última rodada "
+                    f"no momento: {destaques['erro']}"
+                )
+            }
+            
+        jogos_mais_gols = destaques["jogo_mais_gols"]
+        maior_goleada = destaques["maior_goleada"]
+        
+        nome_mandante_destaque = nome_time_portugues(
+            jogos_mais_gols["mandante"]
+        )
+        
+        nome_visitante_destaque = nome_time_portugues(
+            jogos_mais_gols["visitante"]
+        )
+        
+        gols_mandante = jogos_mais_gols["gols_mandante"]
+        gols_visitante = jogos_mais_gols["gols_visitante"]
+        
+        resposta = (
+            f"⚽ **Destaques da rodada {destaques['rodada']} "
+            f"do Brasileirão Série A!**\n\n"
+            f"A rodada teve {destaques['total_gols']} gols "
+            f"em {destaques['total_partidas']} partidas, "
+            f"com média de {destaques['media_gols']} gols por jogo.\n\n"
+            f"🔥 **Jogo com mais gols:**\n"
+            f"{nome_mandante_destaque} {gols_mandante} x "
+            f"{gols_visitante} {nome_visitante_destaque}.\n\n"
+        )
+        
+        mandante_goleada = nome_time_portugues(
+            maior_goleada["mandante"]
+        )
+        visitante_goleada = nome_time_portugues(
+            maior_goleada["visitante"]
+        )
+        
+        resposta += (
+            f"💥 **Maior goleada:**\n"
+            f"{mandante_goleada} "
+            f"{maior_goleada['gols_mandante']} x "
+            f"{maior_goleada['gols_visitante']} "
+            f"{visitante_goleada}.\n\n"
+        )
+        
+        melhores_ataques = destaques["melhores_ataques"]
+        melhores_defesas = destaques["melhores_defesas"]
+        partidas_equilibradas = destaques["partidas_equilibradas"]
+
+        nomes_melhores_ataques = ", ".join(
+            nome_time_portugues(time["time"])
+            for time in melhores_ataques
+        )
+
+        nomes_melhores_defesas = ", ".join(
+            nome_time_portugues(time["time"])
+            for time in melhores_defesas
+        )
+
+        resposta += (
+            f"⚽ **Melhor ataque:** {nomes_melhores_ataques}, "
+            f"com {melhores_ataques[0]['gols']} gols marcados.\n\n"
+            f"🛡️ **Melhor defesa:** {nomes_melhores_defesas}, "
+            f"com {melhores_defesas[0]['gols_sofridos']} gols sofridos.\n\n"
+        )
+        
+        resposta += "⚖️ **Partidas mais equilibradas:**\n"
+
+        for jogo in partidas_equilibradas:
+            nome_mandante_equilibrado = nome_time_portugues(
+                jogo["mandante"]
+            )
+
+            nome_visitante_equilibrado = nome_time_portugues(
+                jogo["visitante"]
+            )
+
+            resposta += (
+                f"- {nome_mandante_equilibrado} "
+                f"{jogo['gols_mandante']} x "
+                f"{jogo['gols_visitante']} "
+                f"{nome_visitante_equilibrado}\n"
+            )
+
+        resposta += "\n"
+        
+        partidas_ordenadas = sorted(
+            destaques["partidas"],
+            key=lambda jogo: (
+                jogo["gols_mandante"] + jogo["gols_visitante"]
+            ),
+            reverse=True
+        )
+        
+        resposta += "**Resultados da rodada:**\n"
+        
+        for jogo in partidas_ordenadas:
+            nome_mandante = nome_time_portugues(jogo["mandante"])
+            nome_visitante = nome_time_portugues(jogo["visitante"])
+            
+            resposta += (
+                f"\n- {nome_mandante} "
+                f"{jogo['gols_mandante']} x "
+                f"{jogo['gols_visitante']} "
+                f"{nome_visitante}"
+            )
+            
+        return {
+            "response": resposta
         }
     
     resposta_comparacao = comparar_conceitos_futebol(pergunta.pergunta)
@@ -5384,15 +5809,19 @@ async def conversar(pergunta: Pergunta):
         "titulos brasileiros",
     ]
 
-    pergunta_sobre_titulos = any(
-        termo in pergunta.pergunta.lower()
-        for termo in termos_titulos
-    )
+    pergunta_sobre_titulos = (
+        intencao_estatistica == "titulos_clubes"
+        or any(
+            termo in normalizar_texto(pergunta.pergunta)
+            for termo in termos_titulos
+        )
+    ) 
+    
 
     print("PERGUNTA:", pergunta.pergunta)
     print("É PERGUNTA SOBRE TÍTULOS:", pergunta_sobre_titulos)
 
-    if pergunta_sobre_titulos:
+    if pergunta_sobre_titulos and intencao_estatistica != "titulos_clubes":
         resposta = await responder_pergunta_geral_tavily(
             pergunta.pergunta
         )
@@ -5405,7 +5834,7 @@ async def conversar(pergunta: Pergunta):
     print("INTENÇÃO:", intencao_estatistica)
 
     eh_pergunta_estatistica = intencao_estatistica in {
-        "quantidade", "comparacao", "divergencia", "quantidade_elenco", "premios_individuais",
+        "quantidade", "comparacao", "divergencia", "quantidade_elenco", "premios_individuais", "titulos_clubes"
     }
 
     if conhecimento is not None and not eh_pergunta_estatistica:

@@ -9,15 +9,27 @@ load_dotenv()
 
 TAVILY_URL = "https://api.tavily.com/search"
 
-FONTES_PRIORITARIAS = {
+FONTES_OFICIAIS = {
     "fifa.com",
     "uefa.com",
     "conmebol.com",
     "cbf.com.br",
+    "olympics.com",
+    "the-afc.com",
+    "cafonline.com",
+    "concacaf.com",
+    "ofcfootball.com",
+    "saopaulofc.net",
+}
+
+FONTES_JORNALISTICAS = {
     "espn.com",
     "espn.com.br",
     "ge.globo.com",
     "globo.com",
+    "bbc.com",
+    "reuters.com",
+    "apnews.com",
 }
 
 FONTES_REDUZIDAS = {
@@ -112,7 +124,7 @@ def obter_data_atualizacao(conteudo: str) -> str:
 
 
 def pontuar_fonte(url: str) -> int:
-    """Dá prioridade a domínios confiáveis para pesquisa esportiva."""
+    """Classifica fontes conforme sua autoridade para pesquisas esportivas."""
     dominio = obter_dominio(url)
 
     if any(
@@ -123,7 +135,13 @@ def pontuar_fonte(url: str) -> int:
 
     if any(
         dominio == fonte or dominio.endswith("." + fonte)
-        for fonte in FONTES_PRIORITARIAS
+        for fonte in FONTES_OFICIAIS
+    ):
+        return 20
+    
+    if any(
+        dominio == fonte or dominio.endswith("." + fonte)
+        for fonte in FONTES_JORNALISTICAS
     ):
         return 10
 
@@ -551,6 +569,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
     eh_comparacao = forcar_comparacao or pergunta_sobre_comparacao_estatistica(pergunta)
     eh_quantidade_elenco = intencao == "quantidade_elenco"
     eh_premios_individuais = intencao == "premios_individuais"
+    eh_titulos_clubes = intencao == "titulos_clubes"
 
     print("INTENÇÃO RECEBIDA PELO TAVILY:", intencao)
     print("MODO DE PRÊMIOS ATIVO:", eh_premios_individuais)
@@ -682,6 +701,13 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                         "past winners official FIFA"
                     ).split()),
                 },
+                {
+                    "jogador": "",
+                    "query": (
+                        'site:fifa.com/en/the-best-fifa-football-awards/articles/all-award-winners-history '
+                        '"The Best FIFA Men\'s Player"'
+                    ),
+                },
             ]
             
         elif premio_especifico:
@@ -748,6 +774,44 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                ),
            }
        ]
+       
+    elif eh_titulos_clubes:
+        if not equipe:
+            print("Não foi possível identificar o clube para pesquisar títulos.")
+            return []
+        
+        consultas = [
+            {
+                "jogador": "",
+                "query": (
+                    f'"{equipe}" títulos oficiais conquistados '
+                    "histórico de títulos lista de troféus "
+                    "campeonatos nacionais continentais mundiais "
+                    "site oficial do clube"
+                ),
+            },
+            {
+                "jogador": "",
+                "query": (
+                    f'"{equipe}" honours trophy history '
+                    "official titles championships winners"
+                ),
+            },
+            {
+                "jogador": "",
+                "query": (
+                    f'"{equipe}" títulos oficiais quantidade '
+                    "campeonatos conquistados federação confederação"
+                ),
+            },
+            {
+                "jogador": "",
+                "query": (
+                    'site:saopaulofc.net/enciclopedia-todos-os-titulos '
+                    '"São Paulo Futebol Clube" títulos oficiais'
+                ),
+            },
+        ]
 
     else:
         consultas = [
@@ -776,7 +840,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                     if eh_comparacao
                     else max_resultados,
                     "include_answer": False,
-                    "include_raw_content": "markdown" if eh_comparacao or eh_quantidade_elenco or eh_premios_individuais else False,
+                    "include_raw_content": "markdown" if eh_comparacao or eh_quantidade_elenco or eh_premios_individuais or eh_titulos_clubes else False,
                     "exclude_domains": [
                         "instagram.com", "facebook.com", "threads.com",
                         "tiktok.com", "x.com", "twitter.com",
@@ -850,7 +914,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                     f"{encontrados} resultados aproveitados."
                 )
 
-        if eh_comparacao:
+        if eh_comparacao or eh_titulos_clubes:
             # Ordena por relevância e confiabilidade da fonte.
             resultados.sort(
                 key=lambda item: (
@@ -860,6 +924,7 @@ async def pesquisar_na_web(pergunta: str, max_resultados: int = 5, forcar_compar
                 reverse=True,
             )
 
+        if eh_comparacao:
             resultados_por_jogador = {}
 
             for item in resultados:
@@ -1102,6 +1167,40 @@ def formatar_resultados_pesquisa(
     partes = []
 
     texto_pergunta = normalizar_escopo(pergunta)
+    
+    eh_titulos_clubes = any(
+        termo in texto_pergunta
+        for termo in [
+            "titulos do clube",
+            "titulos do time",
+            "titulos conquistados",
+            "titulos oficiais",
+            "quantos titulos",
+            "quantos campeonatos",
+            "trofeus do clube",
+            "trofeus conquistados",
+            "historia de titulos",
+            "lista de titulos",
+        ]
+    )
+
+    if eh_titulos_clubes:
+        resultados_filtrados = []
+
+        for resultado in resultados:
+            url = resultado.get("url", "").lower().rstrip("/")
+
+            # Ignora páginas de títulos das categorias de base.
+            if "enciclopedia-todos-os-titulos-da-base" in url:
+                continue
+
+            # Ignora a versão duplicada da enciclopédia principal.
+            if url.endswith("/enciclopedia-todos-os-titulos-2"):
+                continue
+
+            resultados_filtrados.append(resultado)
+
+        resultados = resultados_filtrados
 
     eh_premios_individuais = any(
         termo in texto_pergunta
@@ -1142,6 +1241,30 @@ def formatar_resultados_pesquisa(
                 "recebeu a 8ª",
                 "oito conquistas",
                 "8 conquistas",
+            ]
+        else:
+            termos_relevantes = [
+                "título",
+                "titulos",
+                "títulos",
+                "campeonato",
+                "campeonatos",
+                "taça",
+                "taças",
+                "copa",
+                "copas",
+                "libertadores",
+                "mundial",
+                "brasileiro",
+                "brasileirão",
+                "supercopa",
+                "recopa",
+                "champions",
+                "la liga",
+                "bundesliga",
+                "ligue one",
+                "ligue 1",
+                "premier league",
             ]
 
         linhas_relevantes = [
