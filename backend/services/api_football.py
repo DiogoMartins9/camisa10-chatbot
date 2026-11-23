@@ -787,3 +787,128 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
         "eventos": eventos,
         "classificacao": classificacao_tela
     }
+
+
+def buscar_times_por_pais(pais: str) -> list | None:
+    """
+    Busca os times disponíveis na API-Football
+    utilizando o nome do país.
+    """
+
+    if not API_FOOTBALL_KEY or not pais:
+        return None
+
+    try:
+        resposta = requests.get(
+            f"{API_FOOTBALL_URL}/teams",
+            headers={
+                "x-apisports-key": API_FOOTBALL_KEY
+            },
+            params={
+                "country": pais
+            },
+            timeout=20
+        )
+
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+        if dados.get("errors"):
+            print(
+                f"Erro ao buscar times de {pais}:",
+                dados["errors"]
+            )
+            return None
+
+        times = []
+
+        for item in dados.get("response", []):
+            time = item.get("team", {})
+
+            if not time.get("id") or not time.get("name"):
+                continue
+
+            times.append({
+                "id": time.get("id"),
+                "nome": time.get("name"),
+                "logo": time.get("logo"),
+                "pais": time.get("country"),
+                "nacional": bool(time.get("national", False)),
+            })
+
+        return times
+
+    except requests.RequestException as erro:
+        print(f"Erro na consulta de times de {pais}: {erro}")
+        return None
+    
+def buscar_paises_api_football() -> list:
+    if not API_FOOTBALL_KEY:
+        return []
+    
+    try:
+        resposta = requests.get(
+            f"{API_FOOTBALL_URL}/teams/countries",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            timeout=20,
+        )
+        
+        resposta.raise_for_status()
+        dados = resposta.json()
+        
+        if dados.get("errors"):
+            print("Erro ao buscar países:", dados["errors"])
+            return []
+        
+        return [
+            item["name"]
+            for item in dados.get("response", [])
+            if item.get("name")
+        ]
+    
+    except requests.RequestException as erro:
+        print("Erro ao consultar países:", erro)
+        return []
+
+
+def consultar_cota_api_football() -> dict:
+    if not API_FOOTBALL_KEY:
+        return {
+            "disponivel": False,
+            "erro": "API_FOOTBALL_KEY não configurada",
+        }
+
+    try:
+        resposta = requests.get(
+            f"{API_FOOTBALL_URL}/status",
+            headers={"x-apisports-key": API_FOOTBALL_KEY},
+            timeout=20,
+        )
+
+        resposta.raise_for_status()
+        dados = resposta.json()
+
+        if dados.get("errors"):
+            return {
+                "disponivel": False,
+                "erro": dados["errors"],
+            }
+
+        requisicoes = dados["response"]["requests"]
+        limite = int(requisicoes["limit_day"])
+        utilizadas = int(requisicoes["current"])
+
+        return {
+            "disponivel": True,
+            "utilizadas": utilizadas,
+            "limite": limite,
+            "restantes": max(0, limite - utilizadas),
+        }
+
+    except (requests.RequestException, KeyError, TypeError, ValueError) as erro:
+        return {
+            "disponivel": False,
+            "erro": str(erro),
+        }
+
+

@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from datetime import date
 
 class Base(DeclarativeBase):
     pass
@@ -470,3 +471,211 @@ class PrevisaoEscalacao(Base):
         onupdate=func.current_timestamp(),
     )
 
+class ImagemEsportiva(Base):
+    __tablename__ = "imagens_esportivas"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tipo",
+            "api_id",
+            name="uq_imagem_esportiva_tipo_api_id",
+        ),
+        CheckConstraint(
+            "tipo IN ('time', 'competicao')",
+            name="ck_imagens_esportivas_tipo",
+        ),
+        Index(
+            "ix_imagens_esportivas_tipo",
+            "tipo",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    tipo: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    api_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    nome: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    url_original: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    cloudinary_url: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    public_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+class ProgressoImportacaoTimes(Base):
+    __tablename__ = "progresso_importacao_times"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    pais: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+    )
+
+    total_encontrado: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    total_importado: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    concluido: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+
+class FilaImportacaoTimes(Base):
+    __tablename__ = "fila_importacao_times"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    api_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        unique=True,
+    )
+
+    nome: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    pais: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    
+    nacional: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    url_original: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    importado: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    tentativas: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+    
+class FilaImportacaoPaises(Base):
+    __tablename__ = "fila_importacao_paises"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    pais: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+    )
+
+    prioridade: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+    )
+
+    consultado: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+    
+    ultima_consulta: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    total_encontrado: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    total_novos: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )

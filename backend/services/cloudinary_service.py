@@ -77,3 +77,27 @@ def excluir_imagem_por_url(url: str):
     public_id = public_id.rsplit(".", 1)[0]
 
     return excluir_imagem_cloudinary(public_id)
+
+def enviar_imagem_externa_cloudinary(
+    url: str,
+    public_id: str,
+):
+    """
+    Envia uma imagem de uma URL externa ao Cloudinary.
+    
+    Utiliza um public_id determinístico para evitar
+    duplicação de imagens.
+    """
+    
+    resultado = uploader.upload(
+        url,
+        public_id=public_id,
+        overwrite=False,
+        resource_type="image",
+    )
+    
+    return {
+        "url": resultado["secure_url"],
+        "public_id": resultado["public_id"],
+    }
+    

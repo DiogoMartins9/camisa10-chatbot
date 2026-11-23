@@ -1,5 +1,5 @@
 from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 import ollama
 from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes, buscar_detalhes_temporada_football_data, organizar_classificacao_por_grupo, organizar_mata_mata_competicao)
@@ -17,6 +17,10 @@ from backend.routes.home import router as home_router
 from backend.routes.news import router as news_router
 from backend.routes.quiz import router as quiz_router
 from backend.routes.lineup_challenge import router as lineup_challenge_router
+from sqlalchemy.orm import Session
+from sqlalchemy import tuple_
+from backend.database.connection import get_db
+from backend.database.models import ImagemEsportiva
 import requests
 import re
 import json
@@ -85,7 +89,7 @@ def detalhes_jogo(fixture_id: int):
 
 
 @app.get("/api/jogos/{fixture_id}/tela")
-def detalhes_jogo_tela(fixture_id: int):
+def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
     """
     Retorna os detalhes da partida no formato
     esperado pela tela DetalhesJogos do aplicativo.
@@ -155,6 +159,51 @@ def detalhes_jogo_tela(fixture_id: int):
                 classificacao = resultado_classificacao
     
     resultado = formatar_detalhes_partida(dados, classificacao, tipo_competicao, codigo_competicao)
+    
+    partida = dados.get("partida", {})
+    mandante = partida.get("mandante", {})
+    visitante = partida.get("visitante", {})
+    competicao = partida.get("competicao", {})
+    
+    ids_imagens = [
+        ("time", mandante.get("id")),
+        ("time", visitante.get("id")),
+        ("competicao", competicao.get("id"))
+    ]
+    
+    ids_validos = [
+        (tipo, api_id)
+        for tipo, api_id in ids_imagens
+        if api_id is not None
+    ]
+    
+    if ids_validos:
+        imagens = db.query(ImagemEsportiva).filter(
+            tuple_(
+                ImagemEsportiva.tipo,
+                ImagemEsportiva.api_id
+            ).in_(ids_validos)
+        ).all()
+        
+        imagens_por_id = {
+            (imagem.tipo, imagem.api_id): imagem.cloudinary_url
+            for imagem in imagens
+        }
+        
+        resultado["logo_mandante"] = imagens_por_id.get(
+            ("time", mandante.get("id")),
+            resultado["logo_mandante"]
+        )
+        
+        resultado["logo_visitante"] = imagens_por_id.get(
+            ("time", visitante.get("id")),
+            resultado["logo_visitante"]
+        )
+        
+        resultado["logo_competicao"] = imagens_por_id.get(
+            ("competicao", competicao.get("id")),
+            resultado["logo_competicao"]
+        )
     
     resultado["fase_de_grupos"] = {
         "status": "nao_aplicavel",
