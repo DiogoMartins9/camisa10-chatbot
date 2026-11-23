@@ -50,7 +50,10 @@ def inicio():
     }
 
 @app.get("/api/jogos")
-def listar_jogos(data: date | None = None):
+def listar_jogos(
+    data: date | None = None,
+    db: Session = Depends(get_db)
+):
     """
     Retorna os jogos disponíveis na API-Football
     para a data informada ou para hoje.
@@ -66,6 +69,50 @@ def listar_jogos(data: date | None = None):
 
     if "erro" in resultado:
         return resultado
+    
+    # Busca os escudos dos times e competições no Neon.
+    jogos = resultado.get("jogos", [])
+
+    ids_imagens = set()
+
+    for jogo in jogos:
+        if jogo.get("id_mandante") is not None:
+            ids_imagens.add(("time", jogo["id_mandante"]))
+
+        if jogo.get("id_visitante") is not None:
+            ids_imagens.add(("time", jogo["id_visitante"]))
+
+        if jogo.get("id_competicao") is not None:
+            ids_imagens.add(("competicao", jogo["id_competicao"]))
+
+    if ids_imagens:
+        imagens = db.query(ImagemEsportiva).filter(
+            tuple_(
+                ImagemEsportiva.tipo,
+                ImagemEsportiva.api_id
+            ).in_(list(ids_imagens))
+        ).all()
+
+        imagens_por_id = {
+            (imagem.tipo, imagem.api_id): imagem.cloudinary_url
+            for imagem in imagens
+        }
+
+        for jogo in jogos:
+            jogo["logo_mandante"] = imagens_por_id.get(
+                ("time", jogo.get("id_mandante")),
+                jogo.get("logo_mandante")
+            )
+
+            jogo["logo_visitante"] = imagens_por_id.get(
+                ("time", jogo.get("id_visitante")),
+                jogo.get("logo_visitante")
+            )
+
+            jogo["logo_competicao"] = imagens_por_id.get(
+                ("competicao", jogo.get("id_competicao")),
+                jogo.get("logo_competicao")
+            )
 
     return resultado
 
