@@ -12,6 +12,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    Index,
+    SmallInteger,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -347,3 +349,124 @@ class SequenciaQuiz(Base):
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
     )
+
+
+class PrevisaoEscalacao(Base):
+    __tablename__ = "previsoes_escalacao"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "usuario_id",
+            "fixture_id",
+            name="uq_previsao_usuario_partida",
+        ),
+        CheckConstraint(
+            "pontuacao_mandante BETWEEN 0 AND 130",
+            name="ck_pontuacao_mandante",
+        ),
+        CheckConstraint(
+            "pontuacao_visitante BETWEEN 0 AND 130",
+            name="ck_pontuacao_visitante",
+        ),
+        CheckConstraint(
+            "pontuacao_total BETWEEN 0 AND 260",
+            name="ck_pontuacao_total",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    usuario_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("usuarios.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    fixture_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    
+    mandante_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    visitante_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    mandante_nome: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    mandante_escudo: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    visitante_nome: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    visitante_escudo: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    competicao: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    data_partida: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    mandante: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    visitante: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    pontuacao_mandante: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+    )
+
+    pontuacao_visitante: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+    )
+
+    pontuacao_total: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="aberta",
+    )
+
+    criado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+    )
+
+    atualizado_em: Mapped[DateTime] = mapped_column(
+        DateTime,
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+    )
+

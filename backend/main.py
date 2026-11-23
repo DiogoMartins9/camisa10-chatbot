@@ -2,20 +2,21 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes)
+from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes, buscar_detalhes_temporada_football_data, organizar_classificacao_por_grupo, organizar_mata_mata_competicao)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta, date
 from zoneinfo import ZoneInfo
 from backend.knowledge.historic_knowledge import buscar_conhecimento_historico
 from backend.knowledge.external_research import (identificar_escopo_estatistico, extrair_jogadores_comparacao, pesquisar_na_web, formatar_resultados_pesquisa, pergunta_sobre_divergencia_estatistica, pergunta_sobre_comparacao_estatistica, COMPETICOES, identificar_competicao_pergunta)
-from backend.services.api_football import buscar_jogos_por_data
+from backend.services.api_football import (buscar_jogos_por_data, buscar_detalhes_completos_partida, formatar_detalhes_partida)
 from backend.knowledge.curiosidades import obter_curiosidade_aleatoria
 from fastapi.concurrency import run_in_threadpool
 from backend.routes.auth import router as auth_router
 from backend.routes.home import router as home_router
 from backend.routes.news import router as news_router
 from backend.routes.quiz import router as quiz_router
+from backend.routes.lineup_challenge import router as lineup_challenge_router
 import requests
 import re
 import json
@@ -25,6 +26,7 @@ app.include_router(auth_router)
 app.include_router(home_router)
 app.include_router(news_router)
 app.include_router(quiz_router)
+app.include_router(lineup_challenge_router)
 
 @app.get("/api/times")
 async def listar_times():
@@ -62,6 +64,224 @@ def listar_jogos(data: date | None = None):
         return resultado
 
     return resultado
+
+@app.get("/api/jogos/{fixture_id}/detalhes")
+def detalhes_jogo(fixture_id: int):
+    """
+    Retorna os detalhes completos de uma partida
+    pelo ID da API-Football.
+    """
+    
+    if fixture_id <= 0:
+        return {
+            "erro": "ID da partida inválido."
+        }
+        
+    resultado = buscar_detalhes_completos_partida(
+        fixture_id
+    )
+    
+    return resultado
+
+
+@app.get("/api/jogos/{fixture_id}/tela")
+def detalhes_jogo_tela(fixture_id: int):
+    """
+    Retorna os detalhes da partida no formato
+    esperado pela tela DetalhesJogos do aplicativo.
+    """
+    
+    if fixture_id <= 0:
+        return {
+            "erro": "ID da partida inválido."
+        }
+    
+    dados = buscar_detalhes_completos_partida(fixture_id)
+    
+    if "erro" in dados:
+        return dados
+    
+    competicao_partida = dados.get("partida", {}).get("competicao", {})
+    
+    nome_competicao = competicao_partida.get("nome", "")
+    pais_competicao = competicao_partida.get("pais", "")
+    temporada = competicao_partida.get("temporada")
+    
+    classificacao = []
+    
+    tipo_competicao = None
+    codigo_competicao = None
+    
+    competicoes = buscar_competicoes_football_data()
+    
+    if isinstance(competicoes, list):
+        def normalizar_competicao(valor):
+            valor = unicodedata.normalize("NFKD", valor or "")
+            valor = "".join(
+                caractere for caractere in valor
+                if not unicodedata.combining(caractere)
+            )
+            return valor.lower().strip()
+        
+        nome_normalizado = normalizar_competicao(nome_competicao)
+        pais_normalizado = normalizar_competicao(pais_competicao)
+        
+        if pais_normalizado == "brazil" and nome_normalizado in (
+            "serie a",
+            "brasileirao serie a"
+        ):
+            nome_normalizado = "campeonato brasileiro serie a"
+            
+        competencia_encontrada = next(
+            (
+                c for c in competicoes
+                if normalizar_competicao(c.get("nome")) == nome_normalizado
+                and normalizar_competicao(c.get("pais")) == pais_normalizado
+            ),
+            None
+        )
+        
+        if competencia_encontrada:
+            codigo = competencia_encontrada.get("codigo")
+            codigo_competicao = codigo
+            tipo_competicao = competencia_encontrada.get("tipo")
+            
+            resultado_classificacao = buscar_classificacao_competicao(
+                codigo,
+                temporada
+            )
+            
+            if isinstance(resultado_classificacao, list):
+                classificacao = resultado_classificacao
+    
+    resultado = formatar_detalhes_partida(dados, classificacao, tipo_competicao, codigo_competicao)
+    
+    resultado["fase_de_grupos"] = {
+        "status": "nao_aplicavel",
+        "grupos": []
+    }
+    
+    resultado["fase_de_liga"] = {
+        "status": "nao_aplicavel",
+        "classificacao": []
+    }
+    
+    resultado["mata_mata"] = {
+        "status": "nao_aplicavel",
+        "fases_preliminares": [],
+        "mata_mata_principal": []
+    }
+    
+    if codigo_competicao in ("CLI", "CL"):
+
+        # Define quais fases existem em cada competição.
+        if codigo_competicao == "CLI":
+            resultado["fase_de_grupos"]["status"] = "indisponivel"
+            resultado["mata_mata"]["status"] = "indisponivel"
+
+        elif codigo_competicao == "CL":
+            resultado["fase_de_liga"]["status"] = (
+                "disponivel" if classificacao else "indisponivel"
+            )
+            resultado["fase_de_liga"]["classificacao"] = classificacao
+            resultado["mata_mata"]["status"] = "aguardando_inicio"
+
+        temporada_detalhes = buscar_detalhes_temporada_football_data(
+            codigo_competicao, temporada
+        )
+
+        # Só organiza as fases quando a consulta retorna dados válidos.
+        if (
+            isinstance(temporada_detalhes, dict)
+            and "erro" not in temporada_detalhes
+        ):
+            partidas_competicao = temporada_detalhes.get("matches") or []
+
+            if codigo_competicao == "CLI":
+                grupos = organizar_classificacao_por_grupo(
+                    partidas_competicao
+                )
+
+                if grupos:
+                    resultado["fase_de_grupos"] = {
+                        "status": "disponivel",
+                        "grupos": grupos
+                    }
+
+            resultado["mata_mata"] = organizar_mata_mata_competicao(
+                partidas_competicao, codigo_competicao
+            )
+
+            fases_eliminatorias = {
+                "ROUND_1", "ROUND_2", "ROUND_3", "PLAY_OFFS",
+                "ROUND_OF_16", "QUARTER_FINALS",
+                "SEMI_FINALS", "FINAL"
+            }
+
+            partidas_mata_mata = [
+                p for p in partidas_competicao
+                if p.get("stage") in fases_eliminatorias
+            ]
+
+            status_partidas = {
+                p.get("status") for p in partidas_mata_mata
+            }
+
+            if not partidas_mata_mata:
+                status_mata_mata = "aguardando_inicio"
+
+            elif status_partidas & {"IN_PLAY", "PAUSED"}:
+                status_mata_mata = "em_andamento"
+
+            elif status_partidas <= {"FINISHED", "AWARDED"}:
+                status_mata_mata = "concluido"
+
+            elif status_partidas <= {"SCHEDULED", "TIMED"}:
+                status_mata_mata = "aguardando_inicio"
+
+            elif status_partidas & {
+                "FINISHED", "AWARDED", "IN_PLAY", "PAUSED"
+            }:
+                status_mata_mata = "em_andamento"
+
+            else:
+                status_mata_mata = "indisponivel"
+
+            resultado["mata_mata"]["status"] = status_mata_mata
+
+    return resultado
+
+
+
+@app.get("/api/teste/competicao/{codigo_competicao}/{temporada}")
+def testar_estrutura_competicao(codigo_competicao: str, temporada: int):
+    dados = buscar_detalhes_temporada_football_data(
+        codigo_competicao,
+        temporada
+    )
+
+    if not isinstance(dados, dict) or "erro" in dados:
+        return dados
+
+    partidas = dados.get("matches", [])
+
+    fase_de_grupos = []
+
+    if codigo_competicao == "CLI":
+        fase_de_grupos = organizar_classificacao_por_grupo(partidas)
+
+    mata_mata = organizar_mata_mata_competicao(
+        partidas,
+        codigo_competicao
+    )
+
+    return {
+        "codigo_competicao": codigo_competicao,
+        "temporada": temporada,
+        "fase_de_grupos": fase_de_grupos,
+        "mata_mata": mata_mata
+    }
+  
 
 @app.get("/api/identificar-time")
 def identificar_time(pergunta):

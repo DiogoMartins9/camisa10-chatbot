@@ -666,39 +666,64 @@ def buscar_destaques_ultima_rodada():
         "partidas_equilibradas": partidas_equilibradas,
     }
 
-def buscar_classificacao_competicao(codigo_competicao):
+def buscar_classificacao_competicao(codigo_competicao, temporada=None):
     url = f"https://api.football-data.org/v4/competitions/{codigo_competicao}/standings"
 
     headers = {
         "X-Auth-Token": FOOTBALL_DATA_TOKEN
     }
 
-    resposta = requests.get(
-        url,
-        headers=headers
-    )
-
-    dados = resposta.json()
-
+    parametros = {}
+    
+    if temporada is not None:
+        parametros["season"] = temporada
+        
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=parametros,
+            timeout=20
+        )
+        
+        dados = resposta.json()
+        
+    except requests.RequestException as erro:
+        return {
+            "erro": f"Falha ao consultar classificação: {erro}"
+        }
+        
+    except ValueError:
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
+        
     if resposta.status_code != 200:
-        return {"erro": dados}
-
+        return {
+            "erro": dados,
+            "codigo": resposta.status_code
+        }
+        
     try:
         classificacao = dados["standings"][0]["table"]
-    except (KeyError, IndexError):
-        return {"erro": "Classificação não encontrada."}
-
+        
+    except (KeyError, IndexError, TypeError):
+        return {
+            "erro": "Classificação não encontrada."
+        }
+        
     resultado = []
-
+    
     for time in classificacao:
         resultado.append({
-            "posicao": time["position"],
-            "time": time["team"]["name"],
-            "pontos": time["points"],
-            "jogos": time["playedGames"],
-            "vitorias": time["won"],
-            "empates": time["draw"],
-            "derrotas": time["lost"]
+            "posicao": time.get("position"),
+            "time": time.get("team", {}).get("name"),
+            "pontos": time.get("points"),
+            "jogos": time.get("playedGames"),
+            "vitorias": time.get("won"),
+            "empates": time.get("draw"),
+            "derrotas": time.get("lost"),
+            "saldo_gols": time.get("goalDifference")
         })
 
     return resultado
@@ -747,13 +772,115 @@ def buscar_competicoes_football_data():
             "id": competicao.get("id"),
             "nome": competicao.get("name"),
             "codigo": competicao.get("code"),
-            "pais": competicao.get("area", {}).get("name")
+            "pais": competicao.get("area", {}).get("name"),
+            "tipo": competicao.get("type"),
+            "emblema": competicao.get("emblem"),
+            "temporadas": competicao.get("seasons", [])
         })
 
     _CACHE_COMPETICOES["dados"] = competicoes
     _CACHE_COMPETICOES["atualizado_em"] = time.time()
 
     return competicoes
+
+def buscar_detalhes_competicao_football_data(codigo_competicao):
+    url = f"https://api.football-data.org/v4/competitions/{codigo_competicao}"
+
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+    }
+    
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            timeout=20
+        )
+        
+        dados = resposta.json()
+        
+    except requests.RequestException as erro:
+        return {
+            "erro": str(erro)
+        }
+        
+    except ValueError:
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
+        
+    if resposta.status_code != 200:
+        return {
+            "erro": dados,
+            "codigo": resposta.status_code
+        }
+        
+    return dados
+
+def buscar_detalhes_temporada_football_data(
+    codigo_competicao,
+    temporada
+):
+    url = (
+        f"https://api.football-data.org/v4/competitions/"
+        f"{codigo_competicao}/matches"
+    )
+    
+    headers = {
+        "X-Auth-Token": FOOTBALL_DATA_TOKEN
+    }
+    
+    parametros = {
+        "season": temporada
+    }
+    
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=parametros,
+            timeout=20
+        )
+        dados = resposta.json()
+        
+    except requests.RequestException as erro:
+        return {
+            "erro": str(erro)
+        }
+        
+    except ValueError:
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
+        
+    if resposta.status_code != 200:
+        return {
+            "erro": dados,
+            "codigo": resposta.status_code
+        }
+    
+    return dados
+
+
+def traduzir_fase_competicao(fase, codigo_competicao=None):
+    if fase == "PLAY_OFFS" and codigo_competicao == "CLI":
+        return "Oitavas de final"
+
+    fases = {
+        "ROUND_1": "Primeira fase",
+        "ROUND_2": "Segunda fase",
+        "ROUND_3": "Terceira fase",
+        "GROUP_STAGE": "Fase de grupos",
+        "LEAGUE_STAGE": "Fase de liga",
+        "PLAY_OFFS": "Playoffs",
+        "ROUND_OF_16": "Oitavas de final",
+        "QUARTER_FINALS": "Quartas de final",
+        "SEMI_FINALS": "Semifinais",
+        "FINAL": "Final"
+    }
+
+    return fases.get(fase, fase or "Fase não identificada")
+
 
 def buscar_times_competicao(codigo_competicao):
     agora = time.time()
@@ -1199,4 +1326,403 @@ def buscar_jogo_contra_adversario(time1, time2):
                          else None)
     }
 
+
+def organizar_confrontos_mata_mata(partidas, fase=None):
+    confrontos = {}
     
+    for partida in partidas:
+        if fase and partida.get("stage") != fase:
+            continue
+        
+        mandante = partida.get("homeTeam") or {}
+        visitante = partida.get("awayTeam") or {}
+        
+        id_mandante = mandante.get("id")
+        id_visitante = visitante.get("id")
+        
+        if id_mandante is None or id_visitante is None:
+            continue
+        
+        chave = tuple(sorted([id_mandante, id_visitante]))
+        
+        if chave not in confrontos:
+            confrontos[chave] = {
+                "equipes": [mandante, visitante],
+                "jogos": []
+            }
+            
+        placar = partida.get("score") or {}
+        resultado = placar.get("fullTime") or {}
+        
+        confrontos[chave]["jogos"].append({
+            "id": partida.get("id"),
+            "data": partida.get("utcDate"),
+            "mandante": mandante,
+            "visitante": visitante,
+            "placar": resultado,
+            "placar_tempo_regulamentar": placar.get("regularTime"),
+            "penaltis": placar.get("penalties"),
+            "status": partida.get("status")
+        })
+        
+    resultado = []
+    
+    for confronto in confrontos.values():
+        jogos = confronto["jogos"]
+        jogos.sort(key=lambda jogo: jogo.get("data") or "")
+        
+        equipe_a = jogos[0]["mandante"]
+        equipe_b = jogos[0]["visitante"]
+
+        id_a = equipe_a["id"]
+        id_b = equipe_b["id"]
+
+        gols_a = 0
+        gols_b = 0
+
+        for jogo in jogos:
+            placar = jogo.get("placar") or {}
+            
+            placar_regulamentar = (
+                jogo.get("placar_tempo_regulamentar")
+                or placar
+            )
+            
+            gols_mandante = placar_regulamentar.get("home")
+            gols_visitante = placar_regulamentar.get("away")
+
+            if gols_mandante is None or gols_visitante is None:
+                continue
+
+            if jogo["mandante"]["id"] == id_a:
+                gols_a += gols_mandante
+                gols_b += gols_visitante
+            else:
+                gols_a += gols_visitante
+                gols_b += gols_mandante
+
+        classificado = None
+        criterio = None
+        
+        confronto_finalizado = (
+            bool(jogos)
+            and all(jogo.get("status") == "FINISHED" for jogo in jogos)
+        )
+        
+        placares_completos = all(
+            (jogo.get("placar_tempo_regulamentar") or jogo.get("placar") or {}).get("home") is not None
+            and
+            (jogo.get("placar_tempo_regulamentar") or jogo.get("placar") or {}).get("away") is not None
+            for jogo in jogos
+        )
+        
+        if confronto_finalizado and placares_completos:
+            if gols_a > gols_b:
+                classificado = equipe_a
+                criterio = "AGREGADO"
+                
+            elif gols_b > gols_a:
+                classificado = equipe_b
+                criterio = "AGREGADO"
+                
+            elif jogos and jogos[-1].get("penaltis"):
+                penaltis = jogos[-1]["penaltis"]
+                
+                gols_penaltis_mandante = penaltis.get("home")
+                gols_penaltis_visitante = penaltis.get("away")
+                
+                if (
+                    gols_penaltis_mandante is not None
+                    and gols_penaltis_visitante is not None
+                ):
+                    ultimo_jogo = jogos[-1]
+                    
+                    if gols_penaltis_mandante > gols_penaltis_visitante:
+                        classificado = (
+                            equipe_a
+                            if ultimo_jogo["mandante"]["id"] == id_a
+                            else equipe_b
+                        )
+                        criterio = "PENALTIS"
+                    
+                    elif gols_penaltis_visitante > gols_penaltis_mandante:
+                        classificado = (
+                            equipe_b
+                            if ultimo_jogo["visitante"]["id"] == id_b
+                            else equipe_a
+                        )
+                        criterio = "PENALTIS"
+
+        resultado.append({
+            "equipes": [equipe_a, equipe_b],
+            "jogos": jogos,
+            "quantidade_jogos": len(jogos),
+            "placar_agregado": {
+                "equipe_a": gols_a,
+                "equipe_b": gols_b
+            },
+            "classificado": classificado,
+            "criterio_classificacao": criterio
+        })
+        
+    return resultado
+
+
+def organizar_mata_mata_competicao(partidas, codigo_competicao=None):
+    fases_preliminares = {
+        "ROUND_1": "Primeira fase preliminar",
+        "ROUND_2": "Segunda fase preliminar",
+        "ROUND_3": "Terceira fase preliminar"
+    }
+
+    fases_principais = [
+        "PLAY_OFFS",
+        "ROUND_OF_16",
+        "QUARTER_FINALS",
+        "SEMI_FINALS",
+        "FINAL"
+    ]
+
+    resultado = {
+        "fases_preliminares": [],
+        "mata_mata_principal": []
+    }
+
+    fases_existentes = sorted({
+        partida.get("stage")
+        for partida in partidas
+        if partida.get("stage") not in (None, "GROUP_STAGE", "LEAGUE_STAGE")
+    })
+
+    for fase in fases_existentes:
+        confrontos = organizar_confrontos_mata_mata(
+            partidas,
+            fase
+        )
+
+        if not confrontos:
+            continue
+
+        if fase in fases_preliminares:
+            nome_fase = fases_preliminares[fase]
+
+            resultado["fases_preliminares"].append({
+                "codigo": fase,
+                "fase": nome_fase,
+                "confrontos": confrontos
+            })
+
+        elif fase in fases_principais:
+            nome_fase = traduzir_fase_competicao(
+                fase,
+                codigo_competicao
+            )
+
+            resultado["mata_mata_principal"].append({
+                "codigo": fase,
+                "fase": nome_fase,
+                "confrontos": confrontos
+            })
+
+        else:
+            resultado["fases_preliminares"].append({
+                "codigo": fase,
+                "fase": traduzir_fase_competicao(
+                    fase,
+                    codigo_competicao
+                ),
+                "confrontos": confrontos
+            })
+
+    ordem_fases = {
+        "ROUND_1": 1,
+        "ROUND_2": 2,
+        "ROUND_3": 3,
+        "PLAY_OFFS": 4,
+        "ROUND_OF_16": 4,
+        "QUARTER_FINALS": 5,
+        "SEMI_FINALS": 6,
+        "FINAL": 7
+    }
+
+    resultado["fases_preliminares"].sort(
+        key=lambda item: ordem_fases.get(item["codigo"], 99)
+    )
+
+    resultado["mata_mata_principal"].sort(
+        key=lambda item: ordem_fases.get(item["codigo"], 99)
+    )
+
+    return resultado
+
+
+def buscar_tabelas_competicao(codigo_competicao, temporada=None):
+    url = (
+        f"https://api.football-data.org/v4/"
+        f"competitions/{codigo_competicao}/standings"
+    )
+
+    headers = {"X-Auth-Token": FOOTBALL_DATA_TOKEN}
+    parametros = {}
+    
+    if temporada is not None:
+        parametros["season"] = temporada
+        
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=parametros,
+            timeout=20
+        )
+        dados = resposta.json()
+        
+    except requests.RequestException as erro:
+        return {
+            "erro": str(erro)
+        }
+    
+    except ValueError:
+        return {
+            "erro": "A API retornou uma resposta inválida."
+        }
+        
+    if resposta.status_code != 200:
+        return {
+            "erro": dados, 
+            "codigo": resposta.status_code
+        }
+        
+    resultado = []
+    
+    for tabela in dados.get("standings", []):
+        if tabela.get("type") != "TOTAL":
+            continue
+
+        times = []
+
+        for time in tabela.get("table", []):
+            times.append({
+                "posicao": time.get("position"),
+                "time": time.get("team", {}).get("name"),
+                "escudo": time.get("team", {}).get("crest"),
+                "pontos": time.get("points"),
+                "jogos": time.get("playedGames"),
+                "vitorias": time.get("won"),
+                "empates": time.get("draw"),
+                "derrotas": time.get("lost"),
+                "saldo_gols": time.get("goalDifference")
+            })
+
+        resultado.append({
+            "fase": tabela.get("stage"),
+            "tipo": tabela.get("type"),
+            "grupo": tabela.get("group"),
+            "classificacao": times
+        })
+        
+    return resultado
+
+
+def organizar_classificacao_por_grupo(partidas):
+    grupos = {}
+
+    for partida in partidas:
+        if partida.get("stage") != "GROUP_STAGE":
+            continue
+
+        grupo = partida.get("group")
+        if not grupo:
+            continue
+
+        if grupo not in grupos:
+            grupos[grupo] = {}
+
+        mandante = partida.get("homeTeam", {})
+        visitante = partida.get("awayTeam", {})
+
+        for equipe in (mandante, visitante):
+            equipe_id = equipe.get("id")
+
+            if equipe_id not in grupos[grupo]:
+                grupos[grupo][equipe_id] = {
+                    "posicao": 0,
+                    "id": equipe_id,
+                    "time": equipe.get("name"),
+                    "escudo": equipe.get("crest"),
+                    "pontos": 0,
+                    "jogos": 0,
+                    "vitorias": 0,
+                    "empates": 0,
+                    "derrotas": 0,
+                    "gols_pro": 0,
+                    "gols_contra": 0,
+                    "saldo_gols": 0
+                }
+
+        if partida.get("status") != "FINISHED":
+            continue
+
+        placar = partida.get("score", {}).get("fullTime", {})
+        gols_mandante = placar.get("home")
+        gols_visitante = placar.get("away")
+
+        if gols_mandante is None or gols_visitante is None:
+            continue
+
+        time_casa = grupos[grupo][mandante["id"]]
+        time_fora = grupos[grupo][visitante["id"]]
+
+        time_casa["jogos"] += 1
+        time_fora["jogos"] += 1
+
+        time_casa["gols_pro"] += gols_mandante
+        time_casa["gols_contra"] += gols_visitante
+
+        time_fora["gols_pro"] += gols_visitante
+        time_fora["gols_contra"] += gols_mandante
+
+        if gols_mandante > gols_visitante:
+            time_casa["vitorias"] += 1
+            time_casa["pontos"] += 3
+            time_fora["derrotas"] += 1
+
+        elif gols_visitante > gols_mandante:
+            time_fora["vitorias"] += 1
+            time_fora["pontos"] += 3
+            time_casa["derrotas"] += 1
+
+        else:
+            time_casa["empates"] += 1
+            time_fora["empates"] += 1
+            time_casa["pontos"] += 1
+            time_fora["pontos"] += 1
+
+    resultado = []
+
+    for nome_grupo, equipes in sorted(grupos.items()):
+        classificacao = list(equipes.values())
+
+        for equipe in classificacao:
+            equipe["saldo_gols"] = (
+                equipe["gols_pro"] - equipe["gols_contra"]
+            )
+
+        classificacao.sort(
+            key=lambda equipe: (
+                equipe["pontos"],
+                equipe["saldo_gols"],
+                equipe["gols_pro"]
+            ),
+            reverse=True
+        )
+
+        for posicao, equipe in enumerate(classificacao, start=1):
+            equipe["posicao"] = posicao
+
+        resultado.append({
+            "grupo": nome_grupo,
+            "classificacao": classificacao
+        })
+
+    return resultado

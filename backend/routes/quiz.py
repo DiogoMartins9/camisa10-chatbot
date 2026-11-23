@@ -14,6 +14,7 @@ from backend.database.models import (
     TentativaQuiz,
     RespostaQuiz,
     SequenciaQuiz,
+    PrevisaoEscalacao,
 )
 from backend.schemas.quiz import (
     QuizResponse,
@@ -206,7 +207,21 @@ def obter_estatisticas(
         else 0.0
     )
 
-    xp_total = int(resumo.xp_total)
+    xp_quizzes = int(resumo.xp_total)
+    
+    xp_escalacao = (
+        db.query(
+            func.coalesce(
+                func.sum(PrevisaoEscalacao.pontuacao_total), 0
+            )
+        )
+        .filter(
+            PrevisaoEscalacao.usuario_id == usuario.id,
+            PrevisaoEscalacao.status == "avaliada",
+        )
+        .scalar()
+    )
+    xp_total = xp_quizzes + int(xp_escalacao)
     dados_nivel = calcular_nivel(xp_total)
 
     return EstatisticasGamificacaoResponse(
