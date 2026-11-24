@@ -620,6 +620,75 @@ def importar_proximo_pais():
 
     finally:
         db.close()
+        
+
+def importar_pais_especifico(nome_pais: str):
+    db = obter_sessao()
+
+    hoje = date.today()
+
+    try:
+        pais = (
+            db.query(FilaImportacaoPaises)
+            .filter(
+                FilaImportacaoPaises.pais == nome_pais
+            )
+            .first()
+        )
+
+        if not pais:
+            print(f"País não encontrado na fila: {nome_pais}")
+            return None
+
+        if pais.consultado:
+            print(f"{nome_pais} já foi consultado anteriormente.")
+            return {
+                "pais": nome_pais,
+                "ja_consultado": True,
+            }
+
+        cota = consultar_cota_api_football()
+
+        if not cota["disponivel"]:
+            print("Não foi possível verificar a cota.")
+            return None
+
+        if cota["restantes"] < 2:
+            print("Cota insuficiente para consultar outro país.")
+            return None
+
+        time.sleep(7)
+
+        resultado = armazenar_times_por_pais(
+            db=db,
+            pais=pais.pais,
+        )
+
+        if resultado is None:
+            pais.ultima_consulta = hoje
+            db.commit()
+
+            print(f"Falha ao consultar {nome_pais}.")
+            return {
+                "pais": nome_pais,
+                "erro": True,
+            }
+
+        pais.consultado = True
+        pais.total_encontrado = resultado["encontrados"]
+        pais.total_novos = resultado["novos"]
+        pais.ultima_consulta = hoje
+
+        db.commit()
+
+        print(f"País consultado manualmente: {pais.pais}")
+        print(resultado)
+
+        return resultado
+
+    finally:
+        db.close()
+
 
 def importar_paises_do_dia(limite_paises: int = 20):
     processados = 0
