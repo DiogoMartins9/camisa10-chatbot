@@ -23,6 +23,13 @@ TEMPO_CACHE_SEGUNDOS = 3600
 TEMPO_CACHE_TIMES_SEGUNDOS = 86400
 
 
+MAPEAMENTO_COMPETICOES_INTERNACIONAIS = {
+    2: "CL",   # UEFA Champions League
+    13: "CLI", # Copa Libertadores
+    4: "EC",   # Euro Championship
+    1: "WC",   # World Cup
+}
+
 def normalizar_nome_time(nome):
     if not nome:
         return ""

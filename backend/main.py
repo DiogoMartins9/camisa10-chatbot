@@ -2,7 +2,7 @@ from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 import ollama
-from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes, buscar_detalhes_temporada_football_data, organizar_classificacao_por_grupo, organizar_mata_mata_competicao)
+from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes, buscar_detalhes_temporada_football_data, organizar_classificacao_por_grupo, organizar_mata_mata_competicao, MAPEAMENTO_COMPETICOES_INTERNACIONAIS)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
 from datetime import datetime, timezone, timedelta, date
@@ -177,6 +177,17 @@ def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
         nome_normalizado = normalizar_competicao(nome_competicao)
         pais_normalizado = normalizar_competicao(pais_competicao)
         
+        id_competicao_api = competicao_partida.get("id")
+        
+        codigo_mapeado = MAPEAMENTO_COMPETICOES_INTERNACIONAIS.get(
+            id_competicao_api
+        )
+        
+        print(
+            f"DEBUG COMPETIÇÃO: ID={id_competicao_api} | "
+            f"CÓDIGO={codigo_mapeado}"
+        )
+        
         if pais_normalizado == "brazil" and nome_normalizado in (
             "serie a",
             "brasileirao serie a"
@@ -186,11 +197,20 @@ def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
         competencia_encontrada = next(
             (
                 c for c in competicoes
-                if normalizar_competicao(c.get("nome")) == nome_normalizado
-                and normalizar_competicao(c.get("pais")) == pais_normalizado
+                if c.get("codigo") == codigo_mapeado
             ),
             None
-        )
+        ) if codigo_mapeado else None
+        
+        if not competencia_encontrada:
+            competencia_encontrada = next(
+                (
+                    c for c in competicoes
+                    if normalizar_competicao(c.get("nome")) == nome_normalizado
+                    and normalizar_competicao(c.get("pais")) == pais_normalizado
+                ),
+                None
+            )
         
         if competencia_encontrada:
             codigo = competencia_encontrada.get("codigo")
@@ -268,12 +288,12 @@ def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
         "mata_mata_principal": []
     }
     
-    if codigo_competicao in ("CLI", "CL"):
+    if codigo_competicao in ("CLI", "CL", "EC", "WC"):
 
         # Define quais fases existem em cada competição.
-        if codigo_competicao == "CLI":
+        if codigo_competicao in ("CLI", "EC", "WC"):
             resultado["fase_de_grupos"]["status"] = "indisponivel"
-            resultado["mata_mata"]["status"] = "indisponivel"
+            resultado["mata_mata"]["status"] = "aguardando_inicio"
 
         elif codigo_competicao == "CL":
             resultado["fase_de_liga"]["status"] = (
@@ -293,7 +313,7 @@ def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
         ):
             partidas_competicao = temporada_detalhes.get("matches") or []
 
-            if codigo_competicao == "CLI":
+            if codigo_competicao in ("CLI", "EC", "WC"):
                 grupos = organizar_classificacao_por_grupo(
                     partidas_competicao
                 )
@@ -377,7 +397,25 @@ def testar_estrutura_competicao(codigo_competicao: str, temporada: int):
         "fase_de_grupos": fase_de_grupos,
         "mata_mata": mata_mata
     }
-  
+
+
+@app.get("/api/debug/competicoes-football-data")
+def listar_competicoes_disponiveis():
+    competicoes = buscar_competicoes_football_data()
+
+    if isinstance(competicoes, dict):
+        return competicoes
+
+    return [
+        {
+            "id": c.get("id"),
+            "nome": c.get("nome"),
+            "codigo": c.get("codigo"),
+            "pais": c.get("pais"),
+            "tipo": c.get("tipo")
+        }
+        for c in competicoes
+    ]
 
 @app.get("/api/identificar-time")
 def identificar_time(pergunta):
