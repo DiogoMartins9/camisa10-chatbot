@@ -847,7 +847,9 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
     # Monta o objeto final.
     return {
         "mandante": mandante.get("nome"),
+        "mandante_id": mandante.get("id"),
         "visitante": visitante.get("nome"),
+        "visitante_id": visitante.get("id"),
         "gols_mandante": partida.get("gols", {}).get("mandante"),
         "gols_visitante": partida.get("gols", {}).get("visitante"),
 
