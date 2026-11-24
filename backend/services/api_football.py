@@ -2,6 +2,7 @@
 import os
 from datetime import date, timedelta
 from functools import lru_cache
+from backend.services.zonas_classificacao import ( obter_zona_classificacao, obter_legenda_classificacao)
 
 import requests
 from dotenv import load_dotenv
@@ -747,17 +748,33 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
             
     classificacao_tela = []
     
+    temporada = competicao.get("temporada")
+    
+    legenda_classificacao = obter_legenda_classificacao(
+        codigo_competicao,
+        temporada
+    )
+    
     if isinstance(classificacao, list):
         for time in classificacao:
+            posicao = time.get("posicao")
+            
+            zona = obter_zona_classificacao(
+                codigo_competicao,
+                temporada,
+                posicao
+            ) if posicao is not None else None
+            
             classificacao_tela.append({
-                "pos": time.get("posicao"),
+                "pos": posicao,
                 "equipe": time.get("time"),
                 "pts": time.get("pontos"),
                 "j": time.get("jogos"),
                 "v": time.get("vitorias"),
                 "e": time.get("empates"),
                 "d": time.get("derrotas"),
-                "sg": time.get("saldo_gols")
+                "sg": time.get("saldo_gols"),
+                "zona": zona
             })
     
     def traduzir_status(codigo, descricao):
@@ -857,7 +874,8 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
         "estatisticas": estatisticas,
         "escalacoes": escalacoes,
         "eventos": eventos,
-        "classificacao": classificacao_tela
+        "classificacao": classificacao_tela,
+        "legenda_classificacao": legenda_classificacao
     }
 
 
