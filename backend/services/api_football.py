@@ -336,6 +336,7 @@ def buscar_detalhes_partida(fixture_id: int) -> dict:
         "arbitro": fixture.get("referee"),
 
         "competicao": {
+            "id": league.get("id"),
             "nome": league.get("name"),
             "pais": league.get("country"),
             "logo": league.get("logo"),
