@@ -759,6 +759,71 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
                 "d": time.get("derrotas"),
                 "sg": time.get("saldo_gols")
             })
+    
+    def traduzir_status(codigo, descricao):
+        status = {
+            "TBD": "A definir",
+            "NS": "Não iniciada",
+            "1H": "Primeiro tempo",
+            "HT": "Intervalo",
+            "2H": "Segundo tempo",
+            "ET": "Prorrogação",
+            "BT": "Intervalo da prorrogação",
+            "P": "Disputa de pênaltis",
+            "SUSP": "Partida suspensa",
+            "INT": "Partida interrompida",
+            "FT": "Encerrada",
+            "AET": "Encerrada após prorrogação",
+            "PEN": "Encerrada nos pênaltis",
+            "PST": "Adiada",
+            "CANC": "Cancelada",
+            "ABD": "Abandonada",
+            "AWD": "Vitória por W.O.",
+            "WO": "Vitória por W.O.",
+            "LIVE": "Em andamento"
+        }
+        
+        return status.get(codigo, descricao)
+    
+    def traduzir_fase(fase):
+        if not fase:
+            return fase
+        
+        traducoes = {
+            "league stage": "Fase de Liga",
+            "group stage": "Fase de Grupos",
+            "regular season": "Temporada Regular",
+            "preliminary round": "Fase Preliminar",
+            "qualifying round": "Fase Classificatória",
+            "play-offs": "Play-offs",
+            "playoff": "Play-off",
+            "final": "Final",
+            "semi-finals": "Semifinais",
+            "semi-final": "Semifinal",
+            "quarter-finals": "Quartas de Final",
+            "quarter-final": "Quartas de Final",
+            "round of 16": "Oitavas de Final",
+            "round of 32": "16-avos de Final",
+            "round of 64": "32-avos de Final",
+            "8th finals": "Oitavas de Final",
+            "16th finals": "16-avos de Final",
+            "32nd finals": "32-avos de Final",
+            "relegation round": "Fase de Rebaixamento",
+            "championship round": "Fase do Campeonato"
+        }
+        
+        fase_normalizada = fase.strip()
+        fase_minuscula = fase_normalizada.lower()
+        
+        for original, traducao in traducoes.items():
+            if fase_minuscula == original:
+                return traducao
+            
+            if fase_minuscula.startswith(original + " - "):
+                complemento = fase_normalizada[len(original):]
+                return traducao + complemento
+        
+        return fase
 
     # Monta o objeto final.
     return {
@@ -773,13 +838,16 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
 
         "competicao": competicao.get("nome"),
         "pais": competicao.get("pais"),
-        "fase": competicao.get("rodada"),
+        "fase": traduzir_fase(competicao.get("rodada")),
         "tipo_competicao": tipo_competicao,
         "codigo_competicao": codigo_competicao,
 
         "data": partida.get("data"),
         "status": partida.get("status"),
-        "status_descricao": partida.get("status_descricao"),
+        "status_descricao": traduzir_status(
+            partida.get("status"),
+            partida.get("status_descricao")    
+        ),
 
         "estadio": partida.get("estadio"),
         "cidade": partida.get("cidade"),
