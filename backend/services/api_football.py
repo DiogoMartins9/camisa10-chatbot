@@ -767,7 +767,9 @@ def formatar_detalhes_partida(dados: dict, classificacao=None, tipo_competicao=N
             
             classificacao_tela.append({
                 "pos": posicao,
+                "id": time.get("id"),
                 "equipe": time.get("time"),
+                "escudo": time.get("escudo"),
                 "pts": time.get("pontos"),
                 "j": time.get("jogos"),
                 "v": time.get("vitorias"),

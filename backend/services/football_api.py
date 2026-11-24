@@ -724,7 +724,9 @@ def buscar_classificacao_competicao(codigo_competicao, temporada=None):
     for time in classificacao:
         resultado.append({
             "posicao": time.get("position"),
+            "id": time.get("team", {}).get("id"),
             "time": time.get("team", {}).get("name"),
+            "escudo": time.get("team", {}).get("crest"),
             "pontos": time.get("points"),
             "jogos": time.get("playedGames"),
             "vitorias": time.get("won"),
