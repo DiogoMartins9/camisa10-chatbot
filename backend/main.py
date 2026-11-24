@@ -211,6 +211,8 @@ def detalhes_jogo_tela(fixture_id: int,  db: Session = Depends(get_db)):
     mandante = partida.get("mandante", {})
     visitante = partida.get("visitante", {})
     competicao = partida.get("competicao", {})
+    print("DEBUG COMPETICAO:", competicao)
+    print("DEBUG ID COMPETICAO:", competicao.get("id"))
     
     ids_imagens = [
         ("time", mandante.get("id")),
