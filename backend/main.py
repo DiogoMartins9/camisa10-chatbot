@@ -30,7 +30,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://improved-space-halibut-wpv6pxw6w642gx4q-8081.app.github.dev"
+        "https://camisa10web.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
