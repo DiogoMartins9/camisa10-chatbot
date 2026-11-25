@@ -16,3 +16,6 @@ __pycache__/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Ambiente e arquivos do Modal/Ollama
+modal_ollama/

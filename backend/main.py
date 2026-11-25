@@ -1,7 +1,7 @@
 from backend.knowledge.tactical_knowledge import CONHECIMENTO_TATICO
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
-import ollama
+from backend.services import groq_ollama_compat as ollama
 from backend.services.football_api import (buscar_destaques_ultima_rodada, buscar_competicoes_football_data, buscar_proximos_jogos, buscar_time_football_data, buscar_competicoes_do_time, buscar_time, buscar_proximo_jogo, buscar_ultimo_jogo, buscar_ultimos_jogos, normalizar_nome_time, buscar_jogo_contra_adversario,buscar_jogos_time, FOOTBALL_DATA_TOKEN, API_KEY, nome_time_portugues, buscar_classificacao_competicao, buscar_historico_confrontos, buscar_jogos_competicao, buscar_times_todas_competicoes, buscar_detalhes_temporada_football_data, organizar_classificacao_por_grupo, organizar_mata_mata_competicao, MAPEAMENTO_COMPETICOES_INTERNACIONAIS)
 from backend.knowledge.football_knowledge import CONHECIMENTO_FUTEBOL
 import unicodedata
