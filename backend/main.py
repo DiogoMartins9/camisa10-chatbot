@@ -21,11 +21,21 @@ from sqlalchemy.orm import Session
 from sqlalchemy import tuple_
 from backend.database.connection import get_db
 from backend.database.models import ImagemEsportiva
+from fastapi.middleware.cors import CORSMiddleware
 import requests
 import re
 import json
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://fantastic-rotary-phone-qjvrj6wrrrj3qgq-8081.app.github.dev"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 app.include_router(auth_router)
 app.include_router(home_router)
 app.include_router(news_router)
