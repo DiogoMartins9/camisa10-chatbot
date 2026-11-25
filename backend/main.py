@@ -30,7 +30,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://fantastic-rotary-phone-qjvrj6wrrrj3qgq-8081.app.github.dev"
+        "https://improved-space-halibut-wpv6pxw6w642gx4q-8081.app.github.dev"
     ],
     allow_credentials=True,
     allow_methods=["*"],
